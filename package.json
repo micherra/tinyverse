@@ -1,0 +1,25 @@
+{
+  "name": "tinyverse",
+  "packageManager": "bun@1.2.21",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "biome:fmt": "biome format .",
+    "biome:write": "biome format --write .",
+    "biome:lint": "biome check .",
+    "biome:fix": "biome check --apply .",
+    "turbo:dev": "bun run turbo dev",
+    "turbo:build": "bun run turbo build",
+    "turbo:lint": "bun run turbo lint",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.2.4",
+    "@types/bun": "latest",
+    "turbo": "^2.5.6"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

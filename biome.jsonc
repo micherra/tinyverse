@@ -1,0 +1,70 @@
+{
+  "$schema": "https://biomejs.dev/schemas/1.8.0/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 140
+  },
+
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "double",
+      "trailingComma": "all",
+      "semicolons": "asNeeded"
+    }
+  },
+
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "correctness": { "noUnusedVariables": "error" },
+      "suspicious": { "noShadowRestrictedNames": "warn" },
+      "style": { "useShorthandArrayType": "warn" },
+      "a11y": { "noAutofocus": "warn" },
+      "nursery": { "useSortedClasses": "off" }
+    }
+  },
+
+  "organizeImports": { "enabled": true },
+
+  "files": {
+    "ignore": [
+      "**/dist/**",
+      "**/build/**",
+      "**/.next/**",
+      "apps/exported/**",
+      "**/coverage/**",
+      "**/.turbo/**",
+      "**/.vercel/**",
+      "**/*.d.ts"
+    ]
+  },
+
+  "overrides": [
+    {
+      "include": ["**/*.test.{ts,tsx,js,jsx}", "e2e/**/*"],
+      "linter": {
+        "rules": {
+          "correctness": { "noUnusedVariables": "warn" }
+        }
+      }
+    },
+    {
+      "include": ["**/*.{config,rc}.{ts,js,cjs,mjs}"],
+      "linter": {
+        "rules": {
+          "style": { "useImportType": "off" }
+        }
+      }
+    },
+    {
+      "include": ["**/*.json", "**/*.jsonc"],
+      "json": { "formatter": { "enabled": true } }
+    }
+  ]
+}

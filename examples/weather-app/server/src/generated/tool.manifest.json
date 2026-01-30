@@ -1,9 +1,9 @@
 {
   "manifest_version": "tinyverse.tool.v0.1",
-  "name": "tinyverse-sample-preview",
+  "name": "tinyverse-sample",
   "version": "0.1.0",
   "generated_by": "tinyverse-extractor",
-  "generated_at": "2026-01-30T04:27:50.239Z",
+  "generated_at": "2026-01-30T15:45:42.244Z",
   "tools": [
     {
       "id": "weather.getForecast",

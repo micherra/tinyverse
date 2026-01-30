@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ForecastCards, { ToolResponse } from "./components/ForecastCards";
 
+const DEFAULT_TOOL_ID = "weather.getForecast";
+const DEFAULT_RESOURCE_URI = "ui://weather/forecast";
+
 type Message = { id: string; role: "user" | "assistant"; content: string };
-type Plan = { toolId: string | null; resourceUri: string | null; args: Record<string, any>; reason?: string };
+type Plan = { toolId: string; resourceUri: string; args: Record<string, any> };
 type ToolMeta = {
   toolId: string;
   resourceUri: string;
@@ -24,7 +27,6 @@ const Status = ({ label, tone }: { label: string; tone: "success" | "error" | "m
 );
 
 const getEnvApiKey = () => {
-  // Try Vite env (with OPENAI_ prefix), then process.env, then a window override.
   const env = (import.meta as any).env ?? {};
   const viteKey = env.VITE_OPENAI_API_KEY;
   const openAiKey = env.OPENAI_API_KEY;
@@ -33,16 +35,11 @@ const getEnvApiKey = () => {
   return (viteKey || openAiKey || processKey || windowKey || "").trim();
 };
 
-const isWeatherQuery = (text: string) => {
-  const normalized = text.toLowerCase();
-  return /(weather|forecast|temperature|rain|snow|sunny|cloudy|precip|wind)/.test(normalized);
-};
-
 const App: React.FC = () => {
   const [apiKey, setApiKey] = useState(() => getEnvApiKey() || localStorage.getItem("tv_preview_api_key") || "");
   const [userInput, setUserInput] = useState("What's the 4-day forecast for San Francisco?");
   const [messages, setMessages] = useState<Message[]>([
-    { id: "m-1", role: "assistant", content: "Ask me about weather and I'll pick the right tool + UI." },
+    { id: "m-1", role: "assistant", content: "Ask for a forecast; I'll pick the Tinyverse tool + UI." },
   ]);
   const [availableTools, setAvailableTools] = useState<ToolMeta[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -52,8 +49,8 @@ const App: React.FC = () => {
   const [error, setError] = useState<string>("");
   const hasApiKey = Boolean(apiKey);
   const resourceHref = useMemo(() => {
-    if (!plan?.resourceUri) return null;
-    const match = /^ui:\/\/([^/]+)\/(.+)$/.exec(plan.resourceUri);
+    const targetUri = plan?.resourceUri ?? DEFAULT_RESOURCE_URI;
+    const match = /^ui:\/\/([^/]+)\/(.+)$/.exec(targetUri);
     if (!match) return null;
     const [, ns, res] = match;
     return `${window.location.origin}/ui/${ns}/${res}`;
@@ -74,25 +71,29 @@ const App: React.FC = () => {
         const data = (await res.json()) as any[];
         const mapped: ToolMeta[] =
           data?.map((entry) => ({
-            toolId: entry.id ?? entry.toolId ?? "unknown.tool",
-            resourceUri: entry.resourceUri ?? "ui://weather/forecast",
+            toolId: entry.id ?? entry.toolId ?? DEFAULT_TOOL_ID,
+            resourceUri: entry.resourceUri ?? DEFAULT_RESOURCE_URI,
             description: entry.description,
             schema: entry.inputSchema,
           })) ?? [];
-        setAvailableTools(mapped.length > 0 ? mapped : []);
+        const withFallback =
+          mapped.length > 0
+            ? mapped
+            : [
+                {
+                  toolId: DEFAULT_TOOL_ID,
+                  resourceUri: DEFAULT_RESOURCE_URI,
+                  description: "Fallback preview tool",
+                },
+              ];
+        setAvailableTools(withFallback);
       } catch (err) {
         setCatalogError(err instanceof Error ? err.message : "Failed to load tool catalog");
-        // fallback to weather tool
         setAvailableTools([
           {
-            toolId: "weather.getForecast",
-            resourceUri: "ui://weather/forecast",
-            description: "Get a mock forecast for a location and optional number of days",
-            schema: {
-              type: "object",
-              properties: { location: { type: "string" }, days: { type: "integer", minimum: 1 } },
-              required: ["location"],
-            },
+            toolId: DEFAULT_TOOL_ID,
+            resourceUri: DEFAULT_RESOURCE_URI,
+            description: "Fallback preview tool",
           },
         ]);
       }
@@ -104,7 +105,6 @@ const App: React.FC = () => {
     if (!apiKey) {
       throw new Error("Add an OpenAI API key to plan the tool call.");
     }
-
     const toolCatalog = availableTools.map((t) => ({
       toolId: t.toolId,
       resourceUri: t.resourceUri,
@@ -124,15 +124,15 @@ const App: React.FC = () => {
           {
             role: "system",
             content:
-              "You are a routing assistant. Pick the best tool and args based on the user request. Respond as JSON only. If no tool fits, return toolId=null and explain briefly.",
+              "You are a routing assistant. Pick the best tool and args based on the user request. Respond as JSON only.",
           },
           {
             role: "user",
             content: [
               "Available tools:",
               JSON.stringify(toolCatalog, null, 2),
-              'Respond with {"toolId": string|null, "resourceUri": string|null, "args": object, "reason"?: string}.',
-              "Ensure args match the schema. If no tool fits, set toolId/resourceUri to null and include a reason.",
+              'Respond with {"toolId": string, "resourceUri": string, "args": object}.',
+              "Ensure args match the schema.",
               `User question: ${question}`,
             ].join("\n"),
           },
@@ -144,10 +144,9 @@ const App: React.FC = () => {
             schema: {
               type: "object",
               properties: {
-                toolId: { type: ["string", "null"] },
-                resourceUri: { type: ["string", "null"] },
+                toolId: { type: "string" },
+                resourceUri: { type: "string" },
                 args: { type: "object" },
-                reason: { type: "string" },
               },
               required: ["toolId", "resourceUri", "args"],
               additionalProperties: true,
@@ -165,12 +164,15 @@ const App: React.FC = () => {
     const body = await response.json();
     const parsed = body.choices?.[0]?.message?.content;
     const planJson = typeof parsed === "string" ? JSON.parse(parsed) : parsed;
-    const matched = planJson?.toolId ? availableTools.find((t) => t.toolId === planJson.toolId) : null;
+    if (!planJson?.toolId) {
+      throw new Error("Planner did not return a toolId.");
+    }
+    const matched = availableTools.find((t) => t.toolId === planJson.toolId);
+
     return {
-      toolId: matched ? matched.toolId : planJson?.toolId ?? null,
-      resourceUri: matched ? matched.resourceUri : planJson?.resourceUri ?? null,
-      args: planJson?.args ?? {},
-      reason: planJson?.reason,
+      toolId: planJson.toolId,
+      resourceUri: planJson.resourceUri ?? matched?.resourceUri ?? DEFAULT_RESOURCE_URI,
+      args: planJson.args ?? {},
     };
   };
 
@@ -188,7 +190,7 @@ const App: React.FC = () => {
   };
 
   const handleSend = async () => {
-    if (!userInput.trim()) return;
+    if (!userInput.trim() || !hasApiKey || availableTools.length === 0) return;
     setStatus("planning");
     setError("");
     setToolResponse(null);
@@ -199,18 +201,6 @@ const App: React.FC = () => {
     try {
       const nextPlan = await planWithOpenAI(userInput);
       setPlan(nextPlan);
-      const weatherish = isWeatherQuery(userInput);
-      if (!nextPlan.toolId || !nextPlan.resourceUri || !weatherish) {
-        const reason = !weatherish
-          ? "Question is not weather-related."
-          : nextPlan.reason ?? "No relevant tool found for this request.";
-        setMessages((prev) => [
-          ...prev,
-          { id: crypto.randomUUID(), role: "assistant", content: `No tool chosen: ${reason}` },
-        ]);
-        setStatus("done");
-        return;
-      }
       setMessages((prev) => [
         ...prev,
         {
@@ -238,11 +228,20 @@ const App: React.FC = () => {
     <div className="preview-page">
       <header className="hero">
         <div className="pill">Tinyverse Preview</div>
-        <h1>Chat-driven weather preview</h1>
+        <h1>LLM-routed weather preview</h1>
         <p>
-          The chat calls OpenAI (with your key) to pick a tool and args, then invokes the Tinyverse tool endpoint and
-          renders the response.
+          Paste your OpenAI key, ask a weather question, and Tinyverse will plan the tool call, invoke the dev server,
+          and render the mapped UI resource.
         </p>
+        <div className="meta-row">
+          <span className="meta">Tool: {DEFAULT_TOOL_ID}</span>
+          <span className="meta">UI: {DEFAULT_RESOURCE_URI}</span>
+          {resourceHref ? (
+            <a className="meta" href={resourceHref} target="_blank" rel="noreferrer">
+              Open mapped UI
+            </a>
+          ) : null}
+        </div>
         <div className="api-key-row">
           <label>
             OpenAI API Key
@@ -255,11 +254,13 @@ const App: React.FC = () => {
             />
           </label>
           <Status
-            label={hasApiKey ? "Key set (stored locally or from env)" : "Add an API key to plan tool calls"}
+            label={hasApiKey ? "Key set (env/local)" : "Add an API key to plan tool calls"}
             tone={hasApiKey ? "success" : "info"}
           />
         </div>
-        {!hasApiKey ? <div className="warning">No API key detected. Set VITE_OPENAI_API_KEY/OPENAI_API_KEY or paste one above.</div> : null}
+        {!hasApiKey ? (
+          <div className="warning">No API key detected. Set VITE_OPENAI_API_KEY/OPENAI_API_KEY or paste one above.</div>
+        ) : null}
         {catalogError ? <div className="warning">Tool catalog load failed: {catalogError}</div> : null}
       </header>
 
@@ -329,13 +330,16 @@ const App: React.FC = () => {
           {toolResponse ? (
             <>
               <CodeBlock title="result" content={JSON.stringify(toolResponse, null, 2)} />
-              <ForecastCards data={toolResponse} toolId={plan?.toolId} resourceUri={plan?.resourceUri} />
+              <ForecastCards
+                data={toolResponse}
+                toolId={plan?.toolId ?? DEFAULT_TOOL_ID}
+                resourceUri={plan?.resourceUri ?? DEFAULT_RESOURCE_URI}
+              />
             </>
           ) : (
             <div className="placeholder">Awaiting tool call…</div>
           )}
         </section>
-
       </main>
     </div>
   );

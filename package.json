@@ -14,7 +14,7 @@
   "scripts": {
     "clean": "rimraf dist .tinyverse .turbo examples/weather-app/.tinyverse examples/weather-app/dist && rimraf packages/**/dist",
     "build": "npm run build --workspace @tinyverse/core && npm run build --workspace @tinyverse/extractor && npm run build --workspace @tinyverse/builder && npm run build --workspace @tinyverse/dev-server && npm run build --workspace @tinyverse/verifier && npm run build --workspace @tinyverse/cli",
-    "demo": "npm run build && cd examples/weather-app && node ../../packages/cli/dist/index.js init && node ../../packages/cli/dist/index.js dev",
+    "demo": "npm run build && cd examples/weather-app && node ../../packages/cli/dist/index.js init && node ../../packages/cli/dist/index.js preview --tool weather.getForecast --open",
     "test:unit": "npm run build && node --test tests/**/*.test.js",
     "smoke:run": "node scripts/smoke.mjs",
     "smoke": "npm run build && npm run smoke:run",

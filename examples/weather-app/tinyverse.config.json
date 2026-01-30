@@ -6,7 +6,7 @@
     {
       "toolId": "weather.getForecast",
       "resourceUri": "ui://weather/forecast",
-      "entry": "apps/weather/forecast/main.tsx"
+      "entry": "apps/weather/forecast/ForecastCards.tsx"
     }
   ],
   "tsconfig": "tsconfig.json",

@@ -28,8 +28,8 @@ Or jump straight to the CLI-driven preview UI:
 ## Layout
 - `tinyverse.config.json` — demo config (toolGlobs, appResources, bundler, server).
 - `tools/weather/forecast.ts` — decorator-defined tool returning mock forecasts.
-- `apps/weather/forecast/*` — React chat-style UI for `ui://weather/forecast`.
-- `server/src/handlers/weather.getForecast.ts` — handler stub used by the dev server.
+- `apps/weather/forecast/ForecastCards.tsx` — Decorated React UI for `ui://weather/forecast`.
+- `server/src/handlers/weather.getForecast.ts` — Logic for the `weather.getForecast` tool.
 - `.tinyverse/`, `dist/` — generated artifacts (safe to delete).
 
 ## Cleaning up

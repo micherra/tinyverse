@@ -89,7 +89,8 @@ export const buildApps = async (config: TinyverseConfig, options: BuildOptions =
       continue;
     }
     seenResources.add(resource.resourceUri);
-    if (seenTools.has(resource.toolId)) {
+    const isInternal = resource.toolId.startsWith("_tinyverse.") || resource.resourceUri === "ui://tinyverse/preview";
+    if (seenTools.has(resource.toolId) && !isInternal) {
       addDiagnostic(
         diagnostics,
         "error",
@@ -101,7 +102,7 @@ export const buildApps = async (config: TinyverseConfig, options: BuildOptions =
     seenTools.add(resource.toolId);
 
     const toolEntry = toolLookup.get(resource.toolId);
-    if (!toolEntry) {
+    if (!toolEntry && !isInternal) {
       addDiagnostic(
         diagnostics,
         "error",
@@ -109,7 +110,7 @@ export const buildApps = async (config: TinyverseConfig, options: BuildOptions =
         `Tool ${resource.toolId} from config not found in tool.manifest.json`,
         path.join(config.outDir, "tool.manifest.json"),
       );
-    } else if (toolEntry.resourceUri && toolEntry.resourceUri !== resource.resourceUri) {
+    } else if (toolEntry && toolEntry.resourceUri && toolEntry.resourceUri !== resource.resourceUri && !isInternal) {
       addDiagnostic(
         diagnostics,
         "error",
@@ -143,9 +144,77 @@ export const buildApps = async (config: TinyverseConfig, options: BuildOptions =
     const distPath = path.resolve(config.distDir, parsed.namespace, parsed.resource);
     const tmpRoot = path.resolve(config.outDir, ".tmp", `${parsed.namespace}-${parsed.resource}`);
     await fs.ensureDir(tmpRoot);
-    const tempHtml = path.join(tmpRoot, "index.html");
+
     const entryAbsolute = path.resolve(resource.entry);
-    const entryImport = path.relative(tmpRoot, entryAbsolute);
+    const entryContent = await fs.readFile(entryAbsolute, "utf8");
+    const isFullApp = entryContent.includes("createRoot(") || entryContent.includes("ReactDOM.render(");
+
+    let scriptSrc: string;
+    if (isFullApp) {
+      scriptSrc = path.relative(tmpRoot, entryAbsolute);
+    } else {
+      const wrapperPath = path.join(tmpRoot, "wrapper.tsx");
+      const relativeEntry = path.relative(tmpRoot, entryAbsolute).replace(/\\/g, "/");
+      // Remove extension for import if it's .tsx or .ts
+      const importPath = relativeEntry.replace(/\.tsx?$/, "");
+
+      const wrapperContent = [
+        'import React, { useState, useEffect } from "react";',
+        'import { createRoot } from "react-dom/client";',
+        `import Component from "${importPath}";`,
+        'import { useTinyverseResponse } from "@tinyverse/core";',
+        "",
+        "const Wrapper = () => {",
+        "  const msg = useTinyverseResponse();",
+        "  const [data, setData] = useState<any>(null);",
+        "  const [error, setError] = useState<string | null>(null);",
+        "",
+        "  useEffect(() => {",
+        "    if (msg && msg !== data) {",
+        "      setData(msg);",
+        "      return;",
+        "    }",
+        "    if (data || msg) return;",
+        "    let aborted = false;",
+        "    const initialTimeout = setTimeout(() => {",
+        "      if (data || aborted || msg) return;",
+        `      fetch("/tools/${resource.toolId}", {`,
+        '        method: "POST",',
+        '        headers: { "Content-Type": "application/json" },',
+        '        body: JSON.stringify({})',
+        "      })",
+        "        .then(res => res.json())",
+        "        .then(json => {",
+        "          if (!aborted && !data && !msg) {",
+        `            setData({ data: json, toolId: "${resource.toolId}", resourceUri: "${resource.resourceUri}" });`,
+        "          }",
+        "        })",
+        "        .catch(err => {",
+        "          if (!aborted) {",
+        '            console.error("Failed to fetch tool data:", err);',
+        '            setError("Failed to load data from dev server.");',
+        "          }",
+        "        });",
+        "    }, 50);",
+        "    return () => { aborted = true; clearTimeout(initialTimeout); };",
+        "  }, [msg, data]);",
+        "",
+        "  if (error) return <div style={{ padding: '20px', color: '#b91c1c', fontFamily: 'sans-serif', fontWeight: 'bold' }}>{error}</div>;",
+        "  if (!data) return <div style={{ padding: '20px', color: '#64748b', fontFamily: 'sans-serif' }}>Loading tool data...</div>;",
+        "  return <Component data={data.data} toolId={data.toolId} resourceUri={data.resourceUri} />;",
+        "};",
+        "",
+        'const container = document.getElementById("root");',
+        "if (container) {",
+        "  const root = createRoot(container);",
+        "  root.render(<Wrapper />);",
+        "}",
+      ].join("\n");
+      await fs.writeFile(wrapperPath, wrapperContent, "utf8");
+      scriptSrc = "./wrapper.tsx";
+    }
+
+    const tempHtml = path.join(tmpRoot, "index.html");
     const htmlContents = [
       "<!doctype html>",
       "<html>",
@@ -155,7 +224,7 @@ export const buildApps = async (config: TinyverseConfig, options: BuildOptions =
       "</head>",
       "<body>",
       '  <div id="root"></div>',
-      `  <script type="module" src="${entryImport}"></script>`,
+      `  <script type="module" src="${scriptSrc}"></script>`,
       "</body>",
       "</html>",
       "",

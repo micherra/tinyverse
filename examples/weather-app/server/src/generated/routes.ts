@@ -5,5 +5,6 @@ export const toolRoutes: ToolRoute[] = [
   { toolId: "weather.getForecast", handlerPath: "../handlers/weather.getForecast" }
 ];
 export const resourceRoutes: ResourceRoute[] = [
-  { resourceUri: "ui://weather/forecast", distPath: "dist/weather/forecast", entryFile: "weather/forecast/index.html", assets: ["weather/forecast/assets/index-BhyiZf_2.js","weather/forecast/assets/index-bSHu2UwD.css"] }
+  { resourceUri: "ui://weather/forecast", distPath: "/Users/michelle/Documents/Codesmith/tinyverse/examples/weather-app/dist/preview/weather/forecast", entryFile: "weather/forecast/index.html", assets: ["weather/forecast/assets/index-DEbacSd-.js","weather/forecast/assets/index-bSHu2UwD.css"] },
+  { resourceUri: "ui://tinyverse/preview", distPath: "/Users/michelle/Documents/Codesmith/tinyverse/examples/weather-app/dist/preview/tinyverse/preview", entryFile: "tinyverse/preview/index.html", assets: ["tinyverse/preview/assets/index-DR9c51hx.js","tinyverse/preview/assets/index-Mranj_Sx.css"] }
 ];

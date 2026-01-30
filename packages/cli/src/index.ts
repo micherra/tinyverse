@@ -69,16 +69,23 @@ const writeFileIfMissing = async (filePath: string, contents: string) => {
 const sanitizeResource = (toolId: string) => toolId.replace(/[^A-Za-z0-9_\-]/g, "-");
 
 const ensurePreviewApp = async (destDir: string, toolId: string, resourceUri: string) => {
-  await fs.ensureDir(destDir);
-  if (await fs.pathExists(previewTemplateDir)) {
-    await fs.copy(previewTemplateDir, destDir, { overwrite: false, errorOnExist: false });
+  if (!(await fs.pathExists(destDir))) {
+    await fs.ensureDir(destDir);
+    if (await fs.pathExists(previewTemplateDir)) {
+      await fs.copy(previewTemplateDir, destDir, { overwrite: true, errorOnExist: false });
+    }
   }
+
   const appPath = path.join(destDir, "src", "App.tsx");
   if (await fs.pathExists(appPath)) {
-    let contents = await fs.readFile(appPath, "utf8");
-    contents = contents.replace(/FALLBACK_TOOL_ID = "[^"]*";/, `FALLBACK_TOOL_ID = "${toolId}";`);
-    contents = contents.replace(/FALLBACK_RESOURCE_URI = "[^"]*";/, `FALLBACK_RESOURCE_URI = "${resourceUri}";`);
-    await fs.writeFile(appPath, contents, "utf8");
+    const contents = await fs.readFile(appPath, "utf8");
+    const newContents = contents
+      .replace(/FALLBACK_TOOL_ID = "[^"]*";/, `FALLBACK_TOOL_ID = "${toolId}";`)
+      .replace(/FALLBACK_RESOURCE_URI = "[^"]*";/, `FALLBACK_RESOURCE_URI = "${resourceUri}";`);
+
+    if (contents !== newContents) {
+      await fs.writeFile(appPath, newContents, "utf8");
+    }
   }
 };
 
@@ -112,7 +119,7 @@ const scaffoldWeatherDemo = async () => {
           {
             toolId: "weather.getForecast",
             resourceUri: "ui://weather/forecast",
-            entry: "apps/weather/forecast/main.tsx",
+            entry: "apps/weather/forecast/ForecastCards.tsx",
           },
         ],
         tsconfig: "tsconfig.json",
@@ -168,45 +175,60 @@ const scaffoldWeatherDemo = async () => {
   );
 
   await writeFileIfMissing(
-    "apps/weather/forecast/main.tsx",
+    "apps/weather/forecast/ForecastCards.tsx",
     [
       'import React from "react";',
-      'import { createRoot } from "react-dom/client";',
+      'import { tinyverseUi } from "@tinyverse/core";',
+      'import "./styles.css";',
       "",
-      "const App = () => {",
-      "  const [forecast, setForecast] = React.useState<string[]>([",
-      '    "Loading mock forecast...",',
-      "  ]);",
-      "",
-      "  React.useEffect(() => {",
-      "    setForecast([",
-      '      "Today: Sunny with light winds",',
-      '      "Tomorrow: Partly cloudy",',
-      '      "Day 3: Light showers possible",',
-      "    ]);",
-      "  }, []);",
-      "",
+      'const ForecastCards = ({ data, toolId }: { data: any; toolId?: string }) => {',
+      '  const list = data?.result?.forecast ?? data?.forecast ?? [];',
       "  return (",
-      '    <div style={{ fontFamily: "Inter, system-ui, sans-serif", padding: "24px", maxWidth: 640, margin: "0 auto" }}>',
-      '      <h1 style={{ marginBottom: 8 }}>Tinyverse Weather</h1>',
-      '      <p style={{ color: "#555", marginBottom: 16 }}>Demo resource: ui://weather/forecast</p>',
-      "      <div style={{ display: 'grid', gap: 8 }}>",
-      "        {forecast.map((line, idx) => (",
-      '          <div key={idx} style={{ padding: 12, borderRadius: 8, background: "#f4f6fb", border: "1px solid #e3e7f2" }}>',
-      "            {line}",
+      '    <div className="forecast-grid">',
+      "      {list.map((line: string, idx: number) => (",
+      '        <div key={idx} className="forecast-card">',
+      '          <div className="forecast-day">Day {idx + 1}</div>',
+      '          <div className="forecast-text">{line}</div>',
+      '          <div className="forecast-meta">Tool: {toolId}</div>',
       "          </div>",
-      "        ))}",
-      "      </div>",
+      "      ))}",
       "    </div>",
       "  );",
       "};",
       "",
-      "const container = document.getElementById('root');",
-      "if (container) {",
-      "  const root = createRoot(container);",
-      "  root.render(<App />);",
-      "}",
+      'export default tinyverseUi({ toolId: "weather.getForecast", resourceUri: "ui://weather/forecast" })(ForecastCards);',
       "",
+    ].join("\n"),
+  );
+
+  await writeFileIfMissing(
+    "apps/weather/forecast/styles.css",
+    [
+      ".forecast-grid {",
+      "  display: grid;",
+      "  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));",
+      "  gap: 12px;",
+      "  margin-top: 10px;",
+      "}",
+      ".forecast-card {",
+      "  border: 1px solid #e2e8f0;",
+      "  border-radius: 12px;",
+      "  padding: 12px;",
+      "  background: linear-gradient(145deg, #f8fafc, #eef2ff);",
+      "  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);",
+      "}",
+      ".forecast-day {",
+      "  font-weight: 700;",
+      "  margin-bottom: 6px;",
+      "}",
+      ".forecast-text {",
+      "  color: #334155;",
+      "}",
+      ".forecast-meta {",
+      "  margin-top: 8px;",
+      "  font-size: 12px;",
+      "  color: #475569;",
+      "}",
     ].join("\n"),
   );
 };
@@ -476,7 +498,12 @@ program
       globals.config ?? defaultConfigPath,
     ];
     const watcher = chokidar.watch(watchPaths, { ignoreInitial: true });
-    watcher.on("all", () => restart());
+    watcher.on("all", (event, path) => {
+      if (!globals.json) {
+        logger.debug({ event, path }, "Watch event triggered restart");
+      }
+      restart();
+    });
 
     const shutdown = async () => {
       await watcher.close();
@@ -494,25 +521,40 @@ program
   .requiredOption("--tool <id>", "Tool ID to preview")
   .option("--resource <uri>", "Resource URI to use (default ui://preview/<tool>)")
   .option("--entry <path>", "Entry file for the preview UI (default .tinyverse/preview-ui/main.tsx)")
+  .option("--openai-key <key>", "OpenAI API Key for the preview planner")
   .option("--open", "Open browser when ready")
   .action(async (opts, command) => {
     const globals = getGlobalOptions(command);
+    if (opts.openaiKey) {
+      process.env.OPENAI_API_KEY = opts.openaiKey as string;
+    }
     const toolId = opts.tool as string;
-    const resourceUri =
-      (opts.resource as string | undefined) ?? `ui://preview/${sanitizeResource(toolId) || "resource"}`;
+    const shellResourceUri = "ui://tinyverse/preview";
     const previewDir = path.resolve(".tinyverse", "preview-ui");
-    const entry = path.resolve(opts.entry ?? path.join(previewDir, "main.tsx"));
+    const shellEntry = path.resolve(opts.entry ?? path.join(previewDir, "main.tsx"));
 
-    await ensurePreviewApp(previewDir, toolId, resourceUri);
+    // Resolve target resource URI and scaffold preview app once.
+    const initialBase = await loadCliConfig(globals);
+    const existing = initialBase.appResources.find((r) => r.toolId === toolId);
+    const targetResourceUri =
+      (opts.resource as string | undefined) ??
+      existing?.resourceUri ??
+      `ui://preview/${sanitizeResource(toolId) || "resource"}`;
+
+    await ensurePreviewApp(previewDir, toolId, targetResourceUri);
 
     const buildPreviewConfig = async (): Promise<TinyverseConfig> => {
       const base = await loadCliConfig(globals);
       const previewOut = path.resolve(base.outDir, "preview");
       const previewDist = path.resolve(base.distDir, "preview");
+
       return {
         ...base,
         name: `${base.name}-preview`,
-        appResources: [{ toolId, resourceUri, entry }],
+        appResources: [
+          ...base.appResources,
+          { toolId: "_tinyverse.preview", resourceUri: shellResourceUri, entry: shellEntry },
+        ],
         outDir: previewOut,
         distDir: previewDist,
         server: { ...base.server, openBrowser: Boolean(opts.open ?? base.server.openBrowser) },
@@ -607,7 +649,7 @@ program
           logger.info({ host: config.server.host, port: runningPort }, "Preview server running");
         }
         if (config.server.openBrowser && !browserOpened) {
-          const parsed = parseResourceUri(resourceUri);
+          const parsed = parseResourceUri(shellResourceUri);
           if (parsed) {
             const url = `http://${config.server.host}:${runningPort}/ui/${parsed.namespace}/${parsed.resource}`;
             await tryOpenBrowser(url, logger);
@@ -627,10 +669,19 @@ program
 
     await restart();
 
-    const initialConfig = await buildPreviewConfig();
-    const watchPaths = [...initialConfig.toolGlobs, entry, globals.config ?? defaultConfigPath];
+    const configForWatch = await buildPreviewConfig();
+    const watchPaths = [
+      ...configForWatch.toolGlobs,
+      ...configForWatch.appResources.map((r) => r.entry),
+      globals.config ?? defaultConfigPath,
+    ];
     const watcher = chokidar.watch(watchPaths, { ignoreInitial: true });
-    watcher.on("all", () => restart());
+    watcher.on("all", (event, path) => {
+      if (!globals.json) {
+        logger.debug({ event, path }, "Watch event triggered restart");
+      }
+      restart();
+    });
 
     const shutdown = async () => {
       await watcher.close();

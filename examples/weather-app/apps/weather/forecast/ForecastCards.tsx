@@ -1,4 +1,6 @@
 import React from "react";
+import { tinyverseUi } from "@tinyverse/core";
+import "./styles.css";
 
 export type ToolResponse = { result?: { forecast?: string[] } | any; forecast?: string[]; error?: string };
 
@@ -7,16 +9,6 @@ type ForecastCardsProps = {
   toolId?: string | null;
   resourceUri?: string | null;
 };
-
-type TinyverseUiMapping = { toolId: string; resourceUri: string };
-type DecoratedComponent<P> = React.ComponentType<P> & { __tinyverse?: TinyverseUiMapping };
-
-const tinyverseUi =
-  (mapping: TinyverseUiMapping) =>
-  <P,>(Component: DecoratedComponent<P>) => {
-    (Component as DecoratedComponent<P>).__tinyverse = mapping;
-    return Component;
-  };
 
 @tinyverseUi({ toolId: "weather.getForecast", resourceUri: "ui://weather/forecast" })
 class ForecastCards extends React.PureComponent<ForecastCardsProps> {

@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 // Fallbacks that will be overwritten by the CLI preview command.
 const FALLBACK_TOOL_ID = "demo.toolId";
 const FALLBACK_RESOURCE_URI = "ui://demo/preview";
+const SHELL_RESOURCE_URI = "ui://tinyverse/preview";
 
 const getEnvApiKey = () => {
   const env = (import.meta as any).env ?? {};
@@ -13,12 +14,12 @@ const getEnvApiKey = () => {
   return (viteKey || openAiKey || processKey || windowKey || "").trim();
 };
 
-type Message = { id: string; role: "user" | "assistant"; content: string };
+type Message = { id: string; role: "user" | "assistant"; content: string; data?: any; plan?: Plan };
 type Plan = { toolId: string; resourceUri: string; args: Record<string, any> };
-type ToolResponse = { result?: { forecast?: string[] } | any; forecast?: string[]; error?: string };
+type ToolResponse = { result?: any; error?: string; [key: string]: any };
 type ToolMeta = {
   toolId: string;
-  resourceUri: string;
+  resourceUri?: string;
   description?: string;
   schema?: Record<string, any>;
 };
@@ -36,25 +37,64 @@ const Status = ({ label, tone }: { label: string; tone: "success" | "error" | "m
   <span className={`status ${tone}`}>{label}</span>
 );
 
-const forecastCards = (data: ToolResponse, toolId?: string) => {
-  const list = data.result?.forecast ?? data.forecast;
-  if (!Array.isArray(list)) return null;
+const MessageText: React.FC<{ content: string }> = ({ content }) => {
+  const parts = content.split(/(\`\`\`[a-z]*\n[\s\S]*?\n\`\`\`|\*\*[^*]+\*\*)/);
   return (
-    <div className="forecast-grid">
-      {list.map((entry: string, idx: number) => (
-        <div key={`${entry}-${idx}`} className="forecast-card">
-          <div className="forecast-day">Day {idx + 1}</div>
-          <div className="forecast-text">{entry}</div>
-          <div className="forecast-meta">Source: {toolId ?? "tool call"}</div>
-        </div>
-      ))}
+    <div className="bubble-text">
+      {parts.map((part, i) => {
+        if (part.startsWith("```")) {
+          const lines = part.split("\n");
+          const code = lines.slice(1, -1).join("\n");
+          return (
+            <pre key={i} className="message-pre">
+              {code}
+            </pre>
+          );
+        }
+        if (part.startsWith("**") && part.endsWith("**")) {
+          return <strong key={i}>{part.slice(2, -2)}</strong>;
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </div>
+  );
+};
+
+const ToolIframe = ({ plan, data }: { plan: Plan; data: any }) => {
+  const resourceHref = useMemo(() => {
+    if (!plan.resourceUri || plan.resourceUri === SHELL_RESOURCE_URI) return null;
+    const match = /^ui:\/\/([^/]+)\/(.+)$/.exec(plan.resourceUri);
+    if (!match) return null;
+    const [, ns, res] = match;
+    return `${window.location.origin}/ui/${ns}/${res}`;
+  }, [plan]);
+
+  if (!resourceHref) return null;
+
+  return (
+    <div className="embedded-ui-container">
+      <iframe
+        className="resource-frame embedded"
+        src={resourceHref}
+        onLoad={(e) => {
+          e.currentTarget.contentWindow?.postMessage(
+            {
+              type: "tinyverse:toolResponse",
+              data: data,
+              toolId: plan.toolId,
+              resourceUri: plan.resourceUri,
+            },
+            "*",
+          );
+        }}
+      />
     </div>
   );
 };
 
 const App: React.FC = () => {
   const [apiKey, setApiKey] = useState(() => getEnvApiKey() || localStorage.getItem("tv_preview_api_key") || "");
-  const [userInput, setUserInput] = useState("What's the 4-day forecast for San Francisco?");
+  const [userInput, setUserInput] = useState("What's the forecast for San Francisco?");
   const [messages, setMessages] = useState<Message[]>([
     { id: "m-1", role: "assistant", content: "Ask a question; I'll pick the tool and UI for you." },
   ]);
@@ -64,10 +104,12 @@ const App: React.FC = () => {
   const [toolResponse, setToolResponse] = useState<ToolResponse | null>(null);
   const [status, setStatus] = useState<"idle" | "planning" | "calling" | "done" | "error">("idle");
   const [error, setError] = useState<string>("");
+  const [viewMode, setViewMode] = useState<"ui" | "json">("ui");
   const hasApiKey = Boolean(apiKey);
+
   const resourceHref = useMemo(() => {
-    const targetUri = plan?.resourceUri ?? FALLBACK_RESOURCE_URI;
-    const match = /^ui:\/\/([^/]+)\/(.+)$/.exec(targetUri);
+    if (!plan?.resourceUri || plan.resourceUri === SHELL_RESOURCE_URI) return null;
+    const match = /^ui:\/\/([^/]+)\/(.+)$/.exec(plan.resourceUri);
     if (!match) return null;
     const [, ns, res] = match;
     return `${window.location.origin}/ui/${ns}/${res}`;
@@ -80,6 +122,26 @@ const App: React.FC = () => {
   }, [apiKey]);
 
   useEffect(() => {
+    if (status === "done" && toolResponse && resourceHref) {
+      const frames = document.getElementsByTagName("iframe");
+      for (let i = 0; i < frames.length; i++) {
+        const frame = frames[i];
+        if (frame.src === resourceHref) {
+          frame.contentWindow?.postMessage(
+            {
+              type: "tinyverse:toolResponse",
+              data: toolResponse,
+              toolId: plan?.toolId,
+              resourceUri: plan?.resourceUri,
+            },
+            "*",
+          );
+        }
+      }
+    }
+  }, [status, toolResponse, resourceHref, plan]);
+
+  useEffect(() => {
     const loadTools = async () => {
       try {
         setCatalogError(null);
@@ -89,7 +151,7 @@ const App: React.FC = () => {
         const mapped: ToolMeta[] =
           data?.map((entry) => ({
             toolId: entry.id ?? entry.toolId ?? "unknown.tool",
-            resourceUri: entry.resourceUri ?? FALLBACK_RESOURCE_URI,
+            resourceUri: entry.resourceUri,
             description: entry.description,
             schema: entry.inputSchema,
           })) ?? [];
@@ -226,21 +288,47 @@ const App: React.FC = () => {
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: `Using ${nextPlan.toolId} (${nextPlan.resourceUri}) with args ${JSON.stringify(nextPlan.args)}`,
+          content: `Planning tool: **${nextPlan.toolId}**\n\n**Arguments:**\n\`\`\`json\n${JSON.stringify(nextPlan.args, null, 2)}\n\`\`\``,
         },
       ]);
       setStatus("calling");
       const data = await callTool(nextPlan);
       setToolResponse(data);
       setStatus("done");
+
+      const toolMeta = availableTools.find((t) => t.toolId === nextPlan.toolId);
+      const hasUi = !!(toolMeta?.resourceUri && toolMeta.resourceUri !== SHELL_RESOURCE_URI);
+
+      if (!hasUi) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `No UI mapped for **${nextPlan.toolId}**. Here is the result:\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``,
+            data,
+            plan: nextPlan,
+          },
+        ]);
+        setViewMode("json");
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `Tool **${nextPlan.toolId}** executed. Rendering UI...`,
+            data,
+            plan: nextPlan,
+          },
+        ]);
+        setViewMode("ui");
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Preview failed";
       setError(message);
       setStatus("error");
-      setMessages((prev) => [
-        ...prev,
-        { id: crypto.randomUUID(), role: "assistant", content: `Error: ${message}` },
-      ]);
+      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: `**Error:** ${message}` }]);
     }
   };
 
@@ -284,12 +372,20 @@ const App: React.FC = () => {
           </div>
 
           <div className="chat-feed">
-            {messages.map((msg) => (
-              <div key={msg.id} className={`bubble ${msg.role}`}>
-                <div className="bubble-role">{msg.role === "assistant" ? "Assistant" : "You"}</div>
-                <div className="bubble-text">{msg.content}</div>
-              </div>
-            ))}
+            {messages.map((msg) => {
+              const toolMeta = msg.plan ? availableTools.find((t) => t.toolId === msg.plan!.toolId) : null;
+              const hasUi = !!(toolMeta?.resourceUri && toolMeta.resourceUri !== SHELL_RESOURCE_URI);
+
+              return (
+                <div key={msg.id} className={`bubble ${msg.role}`}>
+                  <div className="bubble-role">{msg.role === "assistant" ? "Assistant" : "You"}</div>
+                  <MessageText content={msg.content} />
+                  {msg.role === "assistant" && msg.plan && msg.data && hasUi && (
+                    <ToolIframe plan={msg.plan} data={msg.data} />
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div className="composer">
@@ -331,15 +427,58 @@ const App: React.FC = () => {
 
         <section className="panel">
           <div className="panel-head">
-            <p className="eyebrow">Tool response</p>
-            <h2>Structured result</h2>
-            <p>Result returned from the dev server tool endpoint.</p>
+            <div>
+              <p className="eyebrow">Tool response</p>
+              <h2>{viewMode === "ui" ? "Tool UI" : "Structured result"}</h2>
+              <p>
+                {viewMode === "ui"
+                  ? "Interactive UI mapped to this tool."
+                  : "Result returned from the dev server tool endpoint."}
+              </p>
+            </div>
+            {toolResponse && resourceHref ? (
+              <div className="tabs">
+                <button
+                  type="button"
+                  className={`tab-btn ${viewMode === "ui" ? "active" : ""}`}
+                  onClick={() => setViewMode("ui")}
+                >
+                  UI
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${viewMode === "json" ? "active" : ""}`}
+                  onClick={() => setViewMode("json")}
+                >
+                  JSON
+                </button>
+              </div>
+            ) : null}
           </div>
           {error ? <div className="error-box">{error}</div> : null}
           {toolResponse ? (
             <>
-              <CodeBlock title="result" content={JSON.stringify(toolResponse, null, 2)} />
-              {forecastCards(toolResponse, plan?.toolId)}
+              {viewMode === "json" ? (
+                <CodeBlock title="result" content={JSON.stringify(toolResponse, null, 2)} />
+              ) : resourceHref ? (
+                <iframe
+                  className="resource-frame"
+                  src={resourceHref}
+                  onLoad={(e) => {
+                    e.currentTarget.contentWindow?.postMessage(
+                      {
+                        type: "tinyverse:toolResponse",
+                        data: toolResponse,
+                        toolId: plan?.toolId,
+                        resourceUri: plan?.resourceUri,
+                      },
+                      "*",
+                    );
+                  }}
+                />
+              ) : (
+                <div className="placeholder">No UI resource URI mapped to this tool.</div>
+              )}
             </>
           ) : (
             <div className="placeholder">Awaiting tool call…</div>

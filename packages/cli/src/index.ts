@@ -128,7 +128,7 @@ const scaffoldWeatherDemo = async () => {
         server: {
           host: "127.0.0.1",
           port: 8787,
-          openBrowser: false,
+          openBrowser: true,
         },
         bundler: {
           type: "vite",
@@ -381,7 +381,8 @@ program
 program
   .command("dev")
   .description("Watch tools/apps, rebuild, and run dev server")
-  .action(async (_opts, command) => {
+  .option("--open", "Open browser when ready")
+  .action(async (opts, command) => {
     const globals = getGlobalOptions(command);
     const initialConfig = await loadCliConfig(globals);
     let server: ServerHandle | null = null;
@@ -396,6 +397,9 @@ program
       }
       running = true;
       const config = await loadCliConfig(globals);
+      if (opts.open) {
+        config.server.openBrowser = true;
+      }
       const extractResult = await extractTools(config, { strict: globals.strict });
       const buildResult = await buildApps(config, { strict: globals.strict });
       await generateHandlerStubs(extractResult.manifest.tools);

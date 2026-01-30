@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
+import ForecastCards, { ToolResponse } from "./components/ForecastCards";
 
 type Message = { id: string; role: "user" | "assistant"; content: string };
 type Plan = { toolId: string | null; resourceUri: string | null; args: Record<string, any>; reason?: string };
-type ToolResponse = { result?: { forecast?: string[] } | any; forecast?: string[]; error?: string };
 type ToolMeta = {
   toolId: string;
   resourceUri: string;
@@ -22,22 +22,6 @@ const CodeBlock = ({ title, content }: { title: string; content: string }) => (
 const Status = ({ label, tone }: { label: string; tone: "success" | "error" | "muted" | "info" }) => (
   <span className={`status ${tone}`}>{label}</span>
 );
-
-const forecastCards = (data: ToolResponse) => {
-  const list = data.result?.forecast ?? data.forecast;
-  if (!Array.isArray(list)) return null;
-  return (
-    <div className="forecast-grid">
-      {list.map((entry: string, idx: number) => (
-        <div key={`${entry}-${idx}`} className="forecast-card">
-          <div className="forecast-day">Day {idx + 1}</div>
-          <div className="forecast-text">{entry}</div>
-          <div className="forecast-meta">Source: weather.getForecast</div>
-        </div>
-      ))}
-    </div>
-  );
-};
 
 const getEnvApiKey = () => {
   // Try Vite env (with OPENAI_ prefix), then process.env, then a window override.
@@ -345,7 +329,7 @@ const App: React.FC = () => {
           {toolResponse ? (
             <>
               <CodeBlock title="result" content={JSON.stringify(toolResponse, null, 2)} />
-              {forecastCards(toolResponse)}
+              <ForecastCards data={toolResponse} toolId={plan?.toolId} resourceUri={plan?.resourceUri} />
             </>
           ) : (
             <div className="placeholder">Awaiting tool call…</div>

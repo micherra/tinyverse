@@ -1,0 +1,19 @@
+{
+  "name": "@tinyverse/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "fs-extra": "^11.2.0",
+    "pino": "^9.2.0",
+    "zod": "^3.22.4"
+  }
+}

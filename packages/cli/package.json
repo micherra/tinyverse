@@ -1,0 +1,27 @@
+{
+  "name": "@tinyverse/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "tinyverse": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "commander": "^12.1.0",
+    "fs-extra": "^11.2.0",
+    "@tinyverse/builder": "file:../builder",
+    "@tinyverse/core": "file:../core",
+    "@tinyverse/dev-server": "file:../dev-server",
+    "@tinyverse/extractor": "file:../extractor",
+    "@tinyverse/verifier": "file:../verifier"
+  }
+}

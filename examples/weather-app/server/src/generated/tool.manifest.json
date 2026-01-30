@@ -1,0 +1,41 @@
+{
+  "manifest_version": "tinyverse.tool.v0.1",
+  "name": "tinyverse-sample-preview",
+  "version": "0.1.0",
+  "generated_by": "tinyverse-extractor",
+  "generated_at": "2026-01-30T04:27:50.239Z",
+  "tools": [
+    {
+      "id": "weather.getForecast",
+      "name": "weather.getForecast",
+      "description": "Get a mock forecast",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string"
+          },
+          "days": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "location"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "forecast": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "resourceUri": "ui://weather/forecast"
+    }
+  ]
+}

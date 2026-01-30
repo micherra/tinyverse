@@ -1,0 +1,26 @@
+{
+  "name": "tinyverse-sample",
+  "version": "0.1.0",
+  "toolGlobs": ["tools/**/*.ts"],
+  "appResources": [
+    {
+      "toolId": "weather.getForecast",
+      "resourceUri": "ui://weather/forecast",
+      "entry": "apps/weather/forecast/main.tsx"
+    }
+  ],
+  "tsconfig": "tsconfig.json",
+  "outDir": ".tinyverse",
+  "distDir": "dist",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8787,
+    "openBrowser": false
+  },
+  "bundler": {
+    "type": "vite",
+    "framework": "react",
+    "base": "/",
+    "assetsInlineLimit": 4096
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "manifest_version": "tinyverse.apps.v0.1",
+  "name": "tinyverse-sample-preview",
+  "version": "0.1.0",
+  "generated_by": "tinyverse-builder",
+  "generated_at": "2026-01-30T04:27:50.812Z",
+  "outDir": "/Users/michelle/Documents/Codesmith/tinyverse/examples/weather-app/dist/preview",
+  "resources": [
+    {
+      "resourceUri": "ui://weather/forecast",
+      "toolId": "weather.getForecast",
+      "entryFile": "weather/forecast/index.html",
+      "assets": [
+        "weather/forecast/assets/index-BECd99mL.css",
+        "weather/forecast/assets/index-BiX6Gthh.js"
+      ]
+    }
+  ]
+}

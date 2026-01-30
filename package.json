@@ -1,25 +1,53 @@
 {
   "name": "tinyverse",
-  "packageManager": "bun@1.2.21",
-  "module": "index.ts",
-  "type": "module",
+  "version": "0.1.0",
   "private": true,
+  "description": "Tinyverse CLI and scaffold for MCP apps (TS-only, Vite React).",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "biome:fmt": "biome format .",
-    "biome:write": "biome format --write .",
-    "biome:lint": "biome check .",
-    "biome:fix": "biome check --apply .",
-    "turbo:dev": "bun run turbo dev",
-    "turbo:build": "bun run turbo build",
-    "turbo:lint": "bun run turbo lint",
-    "test": "bun test"
+    "clean": "rimraf dist .tinyverse .turbo examples/weather-app/.tinyverse examples/weather-app/dist && rimraf packages/**/dist",
+    "build": "npm run build --workspace @tinyverse/core && npm run build --workspace @tinyverse/extractor && npm run build --workspace @tinyverse/builder && npm run build --workspace @tinyverse/dev-server && npm run build --workspace @tinyverse/verifier && npm run build --workspace @tinyverse/cli",
+    "demo": "npm run build && cd examples/weather-app && node ../../packages/cli/dist/index.js init && node ../../packages/cli/dist/index.js dev",
+    "test:unit": "npm run build && node --test tests/**/*.test.js",
+    "smoke:run": "node scripts/smoke.mjs",
+    "smoke": "npm run build && npm run smoke:run",
+    "test": "npm run test:unit && npm run smoke:run",
+    "format": "prettier --check . || true"
+  },
+  "dependencies": {
+    "@fastify/cors": "^8.3.0",
+    "@fastify/static": "^6.12.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "chokidar": "^3.6.0",
+    "commander": "^12.1.0",
+    "fast-glob": "^3.3.2",
+    "fastify": "^4.25.2",
+    "fs-extra": "^11.2.0",
+    "pino": "^9.2.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "undici": "^6.11.1",
+    "vite": "^5.0.10",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.2.4",
-    "@types/bun": "latest",
-    "turbo": "^2.5.6"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.2.64",
+    "@types/react-dom": "^18.2.18",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.38",
+    "prettier": "^3.1.1",
+    "rimraf": "^5.0.5",
+    "tailwindcss": "^3.4.3",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
   }
 }

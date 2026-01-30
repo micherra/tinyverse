@@ -1,0 +1,20 @@
+{
+  "name": "tinyverse-weather-demo",
+  "private": true,
+  "description": "Weather demo that shows the Tinyverse CLI in action.",
+  "type": "module",
+  "scripts": {
+    "preinit": "node ../../scripts/ensure-cli-dist.mjs",
+    "init": "node ../../packages/cli/dist/index.js init",
+    "preextract": "node ../../scripts/ensure-cli-dist.mjs",
+    "extract": "node ../../packages/cli/dist/index.js extract",
+    "prebuild": "node ../../scripts/ensure-cli-dist.mjs",
+    "build": "npm run extract && node ../../packages/cli/dist/index.js build",
+    "predev": "node ../../scripts/ensure-cli-dist.mjs",
+    "dev": "node ../../packages/cli/dist/index.js dev",
+    "prepreview": "node ../../scripts/ensure-cli-dist.mjs",
+    "preview": "node ../../packages/cli/dist/index.js preview --tool weather.getForecast --resource ui://weather/forecast --open",
+    "preverify": "node ../../scripts/ensure-cli-dist.mjs",
+    "verify": "node ../../packages/cli/dist/index.js verify"
+  }
+}

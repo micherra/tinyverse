@@ -25,6 +25,7 @@ import { emitDiagnostics } from "./diagnostics/emitter.js";
 interface GlobalOptions {
   config: string;
   out?: string;
+  tools?: string[];
   strict: boolean;
   json: boolean;
   verbose: boolean;
@@ -52,6 +53,7 @@ const getGlobalOptions = (command: Command): GlobalOptions => {
   return {
     config: opts.config ?? defaultConfigPath,
     out: opts.out ?? defaultOutDir,
+    tools: opts.tools,
     strict: Boolean(opts.strict ?? defaultStrict),
     json: Boolean(opts.json ?? defaultJson),
     verbose: Boolean(opts.verbose ?? defaultVerbose),
@@ -68,11 +70,35 @@ const writeFileIfMissing = async (filePath: string, contents: string) => {
 
 const sanitizeResource = (toolId: string) => toolId.replace(/[^A-Za-z0-9_\-]/g, "-");
 
-const ensurePreviewApp = async (destDir: string, toolId: string, resourceUri: string) => {
+const ensurePreviewApp = async (
+  destDir: string,
+  toolId: string,
+  resourceUri: string,
+  templateHint?: string,
+) => {
   if (!(await fs.pathExists(destDir))) {
     await fs.ensureDir(destDir);
-    if (await fs.pathExists(previewTemplateDir)) {
-      await fs.copy(previewTemplateDir, destDir, { overwrite: true, errorOnExist: false });
+    let templateToUse: string | undefined;
+
+    if (templateHint) {
+      const customHinted = path.resolve(".tinyverse", "templates", templateHint);
+      if (await fs.pathExists(customHinted)) {
+        templateToUse = customHinted;
+      } else {
+        const globalHinted = path.join(repoRoot, "templates", templateHint);
+        if (await fs.pathExists(globalHinted)) {
+          templateToUse = globalHinted;
+        }
+      }
+    }
+
+    if (!templateToUse) {
+      const customDefault = path.resolve(".tinyverse", "templates", "ui-preview");
+      templateToUse = (await fs.pathExists(customDefault)) ? customDefault : previewTemplateDir;
+    }
+
+    if (templateToUse && (await fs.pathExists(templateToUse))) {
+      await fs.copy(templateToUse, destDir, { overwrite: true, errorOnExist: false });
     }
   }
 
@@ -151,7 +177,7 @@ const scaffoldWeatherDemo = async () => {
       "  @tool({",
       '    id: "weather.getForecast",',
       '    name: "weather.getForecast",',
-      '    description: "Get a mock forecast",',
+      '    description: "Get a real forecast using Open-Meteo",',
       "    inputSchema: {",
       '      type: "object",',
       '      properties: { location: { type: "string" }, days: { type: "integer", minimum: 1 } },',
@@ -164,10 +190,45 @@ const scaffoldWeatherDemo = async () => {
       '    resourceUri: "ui://weather/forecast"',
       "  })",
       "  async getForecast(args: { location: string; days?: number }) {",
-      "    const days = args.days ?? 3;",
-      "    return {",
-      "      forecast: Array.from({ length: days }).map((_, i) => `${args.location}: Day ${i + 1} → Sunny with light breeze`),",
-      "    };",
+      "    const location = args.location?.trim() || \"San Francisco\";",
+      "    const days = Math.min(Math.max(args.days ?? 3, 1), 7);",
+      "",
+      '    const geocodeUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");',
+      '    geocodeUrl.searchParams.set("name", location);',
+      '    geocodeUrl.searchParams.set("count", "1");',
+      "",
+      "    const geoRes = await fetch(geocodeUrl);",
+      "    if (!geoRes.ok) throw new Error(`Geocoding failed: ${geoRes.status}`);",
+      "    const geoJson = await geoRes.json() as any;",
+      "    const first = geoJson?.results?.[0];",
+      "    if (!first) throw new Error(`Location not found: ${location}`);",
+      "",
+      "    const { latitude, longitude, name: resolvedName } = first;",
+      "",
+      '    const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");',
+      '    forecastUrl.searchParams.set("latitude", String(latitude));',
+      '    forecastUrl.searchParams.set("longitude", String(longitude));',
+      '    forecastUrl.searchParams.set("daily", "temperature_2m_max,temperature_2m_min,precipitation_probability_max");',
+      '    forecastUrl.searchParams.set("forecast_days", String(days));',
+      '    forecastUrl.searchParams.set("timezone", "auto");',
+      "",
+      "    const forecastRes = await fetch(forecastUrl);",
+      "    if (!forecastRes.ok) throw new Error(`Forecast request failed: ${forecastRes.status}`);",
+      "    const forecastJson = await forecastRes.json() as any;",
+      "",
+      "    const dates = forecastJson?.daily?.time ?? [];",
+      "    const highs = forecastJson?.daily?.temperature_2m_max ?? [];",
+      "    const lows = forecastJson?.daily?.temperature_2m_min ?? [];",
+      "    const precip = forecastJson?.daily?.precipitation_probability_max ?? [];",
+      "",
+      "    const forecast = dates.slice(0, days).map((date: string, idx: number) => {",
+      '      const high = highs[idx] ?? "–";',
+      '      const low = lows[idx] ?? "–";',
+      '      const rain = precip[idx] ?? "–";',
+      "      return `${resolvedName}: ${date} → High ${high}°C / Low ${low}°C · Rain chance ${rain}%`;",
+      "    });",
+      "",
+      "    return { forecast };",
       "  }",
       "}",
       "",
@@ -293,19 +354,70 @@ const generateHandlerStubs = async (tools: { id: string }[]) => {
     const filename = path.resolve("server", "src", "handlers", `${toolIdToFilename(tool.id)}.ts`);
     if (await fs.pathExists(filename)) continue;
     await fs.ensureDir(path.dirname(filename));
-    const contents = [
-      "// Auto-generated stub for Tinyverse dev server",
-      "export const handler = async (input: any) => {",
-      `  return { message: "NotImplemented", toolId: "${tool.id}", input };`,
-      "};",
-      "",
-    ].join("\n");
+
+    let contents: string;
+    if (tool.id === "weather.getForecast") {
+      contents = [
+        "// Real implementation for weather.getForecast",
+        "export const handler = async (input: any) => {",
+        '  const location = input?.location?.trim?.() || "San Francisco";',
+        "  const days = Math.min(Math.max(input?.days ?? 3, 1), 7);",
+        "",
+        '  const geocodeUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");',
+        '  geocodeUrl.searchParams.set("name", location);',
+        '  geocodeUrl.searchParams.set("count", "1");',
+        "",
+        "  const geoRes = await fetch(geocodeUrl);",
+        "  if (!geoRes.ok) return { error: `Geocoding failed: ${geoRes.status}` };",
+        "  const geoJson = (await geoRes.json()) as any;",
+        "  const first = geoJson?.results?.[0];",
+        "  if (!first) return { error: `Location not found: ${location}` };",
+        "",
+        "  const latitude = first.latitude;",
+        "  const longitude = first.longitude;",
+        "  const resolvedName = first.name ?? location;",
+        "",
+        '  const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");',
+        '  forecastUrl.searchParams.set("latitude", String(latitude));',
+        '  forecastUrl.searchParams.set("longitude", String(longitude));',
+        '  forecastUrl.searchParams.set("daily", "temperature_2m_max,temperature_2m_min,precipitation_probability_max");',
+        '  forecastUrl.searchParams.set("forecast_days", String(days));',
+        '  forecastUrl.searchParams.set("timezone", "auto");',
+        "",
+        "  const forecastRes = await fetch(forecastUrl);",
+        "  if (!forecastRes.ok) return { error: `Forecast request failed: ${forecastRes.status}` };",
+        "  const forecastJson = (await forecastRes.json()) as any;",
+        "  const dates: string[] = forecastJson?.daily?.time ?? [];",
+        "  const highs: number[] = forecastJson?.daily?.temperature_2m_max ?? [];",
+        "  const lows: number[] = forecastJson?.daily?.temperature_2m_min ?? [];",
+        "  const precip: number[] = forecastJson?.daily?.precipitation_probability_max ?? [];",
+        "",
+        "  const forecast = dates.slice(0, days).map((date, idx) => {",
+        '    const high = highs[idx] ?? "–";',
+        '    const low = lows[idx] ?? "–";',
+        '    const rain = precip[idx] ?? "–";',
+        "    return `${resolvedName}: ${date} → High ${high}°C / Low ${low}°C · Rain chance ${rain}%`;",
+        "  });",
+        "",
+        "  return { forecast };",
+        "};",
+        "",
+      ].join("\n");
+    } else {
+      contents = [
+        "// Auto-generated stub for Tinyverse dev server",
+        "export const handler = async (input: any) => {",
+        `  return { message: "NotImplemented", toolId: "${tool.id}", input };`,
+        "};",
+        "",
+      ].join("\n");
+    }
     await fs.writeFile(filename, contents, "utf8");
   }
 };
 
 const loadCliConfig = async (options: GlobalOptions): Promise<TinyverseConfig> => {
-  return loadConfig(options.config, { outDir: options.out });
+  return loadConfig(options.config, { outDir: options.out, toolGlobs: options.tools });
 };
 
 const program = new Command();
@@ -314,6 +426,7 @@ program.enablePositionalOptions();
 program
   .option("--config <path>", "Path to config file", defaultConfigPath)
   .option("--out <path>", "Override outDir (or set TINYVERSE_OUT_DIR)", defaultOutDir)
+  .option("--tools <glob...>", "Globs for tool sources")
   .option("--strict", "Treat warnings as errors", defaultStrict)
   .option("--json", "Emit diagnostics as JSON", defaultJson)
   .option("--verbose", "Enable verbose logging", defaultVerbose);
@@ -520,32 +633,60 @@ program
   });
 
 program
-  .command("preview")
+  .command("preview [path]")
   .description("Generate a preview UI for a tool and run the dev server")
-  .requiredOption("--tool <id>", "Tool ID to preview")
+  .option("--tool <id>", "Tool ID to preview")
   .option("--resource <uri>", "Resource URI to use (default ui://preview/<tool>)")
   .option("--entry <path>", "Entry file for the preview UI (default .tinyverse/preview-ui/main.tsx)")
   .option("--openai-key <key>", "OpenAI API Key for the preview planner")
   .option("--open", "Open browser when ready")
-  .action(async (opts, command) => {
+  .action(async (targetPath, opts, command) => {
     const globals = getGlobalOptions(command);
     if (opts.openaiKey) {
       process.env.OPENAI_API_KEY = opts.openaiKey as string;
     }
-    const toolId = opts.tool as string;
+
+    if (targetPath) {
+      const absPath = path.resolve(targetPath);
+      const stats = await fs.stat(absPath);
+      globals.tools = [stats.isDirectory() ? path.join(absPath, "**/*.{ts,tsx}") : absPath];
+    }
+
+    const initialConfig = await loadCliConfig(globals);
+    const extractResult = await extractTools(initialConfig, { strict: globals.strict });
+
+    let toolId = opts.tool as string | undefined;
+    if (!toolId) {
+      if (extractResult.manifest.tools.length === 1) {
+        toolId = extractResult.manifest.tools[0].id;
+        logger.info(`Auto-selected tool: ${toolId}`);
+      } else if (extractResult.manifest.tools.length > 1) {
+        logger.error("Multiple tools found. Please specify one with --tool <id>:");
+        extractResult.manifest.tools.forEach((t) => logger.error(` - ${t.id}`));
+        process.exit(1);
+      } else {
+        logger.error("No tools found to preview.");
+        process.exit(1);
+      }
+    }
+
     const shellResourceUri = "ui://tinyverse/preview";
     const previewDir = path.resolve(".tinyverse", "preview-ui");
     const shellEntry = path.resolve(opts.entry ?? path.join(previewDir, "main.tsx"));
 
     // Resolve target resource URI and scaffold preview app once.
-    const initialBase = await loadCliConfig(globals);
-    const existing = initialBase.appResources.find((r) => r.toolId === toolId);
+    const existing = initialConfig.appResources.find((r) => r.toolId === toolId);
+    const tool = extractResult.manifest.tools.find((t) => t.id === toolId);
+    const discoveredUi = extractResult.manifest.uiComponents.find((u) => u.toolId === toolId);
+    const templateHint = tool?.previewTemplate ?? discoveredUi?.previewTemplate;
+
     const targetResourceUri =
       (opts.resource as string | undefined) ??
       existing?.resourceUri ??
+      discoveredUi?.resourceUri ??
       `ui://preview/${sanitizeResource(toolId) || "resource"}`;
 
-    await ensurePreviewApp(previewDir, toolId, targetResourceUri);
+    await ensurePreviewApp(previewDir, toolId, targetResourceUri, templateHint);
 
     const buildPreviewConfig = async (): Promise<TinyverseConfig> => {
       const base = await loadCliConfig(globals);

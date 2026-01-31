@@ -3,7 +3,7 @@
   "name": "tinyverse-sample-preview",
   "version": "0.1.0",
   "generated_by": "tinyverse-extractor",
-  "generated_at": "2026-01-30T23:31:31.062Z",
+  "generated_at": "2026-01-30T23:55:14.829Z",
   "tools": [
     {
       "id": "weather.getForecast",
@@ -37,5 +37,6 @@
       },
       "resourceUri": "ui://weather/forecast"
     }
-  ]
+  ],
+  "uiComponents": []
 }

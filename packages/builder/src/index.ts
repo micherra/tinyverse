@@ -78,7 +78,16 @@ export const buildApps = async (config: TinyverseConfig, options: BuildOptions =
   const seenTools = new Set<string>();
   const resources: AppsManifest["resources"] = [];
 
-  for (const resource of config.appResources) {
+  const resourcesToBuild = [...config.appResources];
+  if (toolManifest?.uiComponents) {
+    for (const ui of toolManifest.uiComponents) {
+      if (!resourcesToBuild.some((r) => r.resourceUri === ui.resourceUri)) {
+        resourcesToBuild.push(ui);
+      }
+    }
+  }
+
+  for (const resource of resourcesToBuild) {
     if (seenResources.has(resource.resourceUri)) {
       addDiagnostic(
         diagnostics,
@@ -287,9 +296,9 @@ export const buildApps = async (config: TinyverseConfig, options: BuildOptions =
   await fs.writeJSON(manifestPath, manifest, { spaces: 2 });
 
   if (toolManifest) {
-    const resourceUriSet = new Set(config.appResources.map((r) => r.resourceUri));
+    const builtResourceUris = new Set(resources.map((r) => r.resourceUri));
     for (const tool of toolManifest.tools) {
-      if (tool.resourceUri && !resourceUriSet.has(tool.resourceUri)) {
+      if (tool.resourceUri && !builtResourceUris.has(tool.resourceUri)) {
         addDiagnostic(
           diagnostics,
           "error",

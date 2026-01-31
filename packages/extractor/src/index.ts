@@ -2,7 +2,14 @@ import path from "path";
 import fs from "fs-extra";
 import fg from "fast-glob";
 import ts from "typescript";
-import { getLogger, TinyverseConfig, ToolManifest, ToolManifestEntry, Diagnostic } from "@tinyverse/core";
+import {
+  getLogger,
+  TinyverseConfig,
+  ToolManifest,
+  ToolManifestEntry,
+  UiComponentManifestEntry,
+  Diagnostic,
+} from "@tinyverse/core";
 
 interface ExtractOptions {
   strict?: boolean;
@@ -96,6 +103,17 @@ const parseToolDecorator = (decorator: ts.Decorator): Record<string, any> | null
   if (!ts.isCallExpression(expr)) return null;
   const decoratorName = ts.isIdentifier(expr.expression) ? expr.expression.text : undefined;
   if (decoratorName !== "tool") return null;
+  const [arg] = expr.arguments;
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return null;
+  const parsed = evaluateLiteral(arg);
+  return parsed && typeof parsed === "object" ? parsed : null;
+};
+
+const parseUiDecorator = (decorator: ts.Decorator): Record<string, any> | null => {
+  const expr = decorator.expression;
+  if (!ts.isCallExpression(expr)) return null;
+  const decoratorName = ts.isIdentifier(expr.expression) ? expr.expression.text : undefined;
+  if (decoratorName !== "tinyverseUi") return null;
   const [arg] = expr.arguments;
   if (!arg || !ts.isObjectLiteralExpression(arg)) return null;
   const parsed = evaluateLiteral(arg);
@@ -259,13 +277,27 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
   const toolFiles = await fg(config.toolGlobs, { absolute: true });
   const diagnostics: Diagnostic[] = [];
   const tools: ToolManifestEntry[] = [];
+  const uiComponents: UiComponentManifestEntry[] = [];
   const seenIds = new Set<string>();
 
   const tsconfigPath = path.resolve(config.tsconfig);
-  let compilerOptions: ts.CompilerOptions = {};
+  let compilerOptions: ts.CompilerOptions = {
+    experimentalDecorators: true,
+    emitDecoratorMetadata: true,
+    target: ts.ScriptTarget.ESNext,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    esModuleInterop: true,
+  };
   let tsconfigFiles: string[] = [];
 
-  if (!(await fs.pathExists(tsconfigPath))) {
+  if (await fs.pathExists(tsconfigPath)) {
+    const parsedConfig = loadTsConfig(tsconfigPath, diagnostics);
+    if (parsedConfig) {
+      compilerOptions = { ...compilerOptions, ...parsedConfig.options };
+      tsconfigFiles = parsedConfig.fileNames;
+    }
+  } else if (!config.tsconfig.endsWith("tsconfig.json") || config.tsconfig !== "tsconfig.json") {
     addDiagnostic(
       diagnostics,
       "error",
@@ -273,12 +305,6 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
       `tsconfig not found at ${tsconfigPath}`,
       tsconfigPath,
     );
-  } else {
-    const parsedConfig = loadTsConfig(tsconfigPath, diagnostics);
-    if (parsedConfig) {
-      compilerOptions = parsedConfig.options;
-      tsconfigFiles = parsedConfig.fileNames;
-    }
   }
 
   const program = ts.createProgram({
@@ -298,9 +324,12 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
       const decorators = ts.canHaveDecorators(node) ? ts.getDecorators(node) : undefined;
       if (decorators) {
         decorators.forEach((decorator) => {
-          const meta = parseToolDecorator(decorator);
-          if (meta) {
-            const id = meta.id ?? meta.name ?? (ts.isFunctionLike(node) && node.name ? node.name.getText() : undefined);
+          const toolMeta = parseToolDecorator(decorator);
+          if (toolMeta) {
+            const id =
+              toolMeta.id ??
+              toolMeta.name ??
+              (ts.isFunctionLike(node) && node.name ? node.name.getText() : undefined);
             if (!id) {
               addDiagnostic(diagnostics, "error", "TV_DIAG_TOOL_ID_MISSING", `Tool missing id in ${file}`);
               return;
@@ -311,8 +340,8 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
             }
             seenIds.add(id);
 
-            const inputSchema = meta.inputSchema ?? inferInputSchema(node, checker, diagnostics, file, id);
-            const outputSchema = meta.outputSchema ?? inferOutputSchema(node, checker, diagnostics, file, id);
+            const inputSchema = toolMeta.inputSchema ?? inferInputSchema(node, checker, diagnostics, file, id);
+            const outputSchema = toolMeta.outputSchema ?? inferOutputSchema(node, checker, diagnostics, file, id);
 
             if (!inputSchema) {
               addDiagnostic(
@@ -325,7 +354,7 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
               );
             }
 
-            if (!meta.resourceUri) {
+            if (!toolMeta.resourceUri) {
               addDiagnostic(
                 diagnostics,
                 "warning",
@@ -333,12 +362,12 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
                 `Tool ${id} is missing resourceUri; ensure it maps to a ui:// namespace/resource`,
                 file,
               );
-            } else if (!/^ui:\/\/[A-Za-z0-9_\-]+\/[A-Za-z0-9_\-]+$/.test(meta.resourceUri)) {
+            } else if (!/^ui:\/\/[A-Za-z0-9_\-]+\/[A-Za-z0-9_\-]+$/.test(toolMeta.resourceUri)) {
               addDiagnostic(
                 diagnostics,
                 "error",
                 "TV_DIAG_UI_URI_INVALID",
-                `Invalid resourceUri for tool ${id}: ${meta.resourceUri}`,
+                `Invalid resourceUri for tool ${id}: ${toolMeta.resourceUri}`,
                 file,
                 "Expected format ui://namespace/resource",
               );
@@ -346,11 +375,32 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
 
             tools.push({
               id,
-              name: meta.name ?? id,
-              description: meta.description,
-              inputSchema: inputSchema ?? meta.inputSchema ?? {},
+              name: toolMeta.name ?? id,
+              description: toolMeta.description,
+              inputSchema: inputSchema ?? toolMeta.inputSchema ?? {},
               outputSchema,
-              resourceUri: meta.resourceUri,
+              resourceUri: toolMeta.resourceUri,
+              previewTemplate: toolMeta.previewTemplate,
+            });
+          }
+
+          const uiMeta = parseUiDecorator(decorator);
+          if (uiMeta) {
+            if (!uiMeta.toolId || !uiMeta.resourceUri) {
+              addDiagnostic(
+                diagnostics,
+                "error",
+                "TV_DIAG_UI_META_MISSING",
+                `UI component missing toolId or resourceUri in ${file}`,
+                file,
+              );
+              return;
+            }
+            uiComponents.push({
+              toolId: uiMeta.toolId,
+              resourceUri: uiMeta.resourceUri,
+              entry: file,
+              previewTemplate: uiMeta.previewTemplate,
             });
           }
         });
@@ -368,6 +418,7 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
     generated_by: "tinyverse-extractor",
     generated_at: new Date().toISOString(),
     tools,
+    uiComponents,
   };
 
   await fs.ensureDir(config.outDir);

@@ -5,6 +5,7 @@ export interface ToolDecoratorOptions {
   inputSchema: unknown;
   outputSchema?: unknown;
   resourceUri?: string;
+  previewTemplate?: string;
 }
 
 export const tool = (options: ToolDecoratorOptions) => {

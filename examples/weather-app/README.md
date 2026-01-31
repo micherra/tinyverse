@@ -27,7 +27,7 @@ Or jump straight to the CLI-driven preview UI:
 
 ## Layout
 - `tinyverse.config.json` — demo config (toolGlobs, appResources, bundler, server).
-- `tools/weather/forecast.ts` — decorator-defined tool returning mock forecasts.
+- `tools/weather/forecast.ts` — decorator-defined tool returning real forecasts using Open-Meteo API.
 - `apps/weather/forecast/ForecastCards.tsx` — Decorated React UI for `ui://weather/forecast`.
 - `server/src/handlers/weather.getForecast.ts` — Logic for the `weather.getForecast` tool.
 - `.tinyverse/`, `dist/` — generated artifacts (safe to delete).

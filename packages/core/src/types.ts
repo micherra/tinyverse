@@ -16,6 +16,7 @@ export interface ToolManifestEntry {
   inputSchema: unknown;
   outputSchema?: unknown;
   resourceUri?: string;
+  previewTemplate?: string;
 }
 
 export interface ToolManifest {
@@ -25,6 +26,14 @@ export interface ToolManifest {
   generated_by: string;
   generated_at: string;
   tools: ToolManifestEntry[];
+  uiComponents: UiComponentManifestEntry[];
+}
+
+export interface UiComponentManifestEntry {
+  toolId: string;
+  resourceUri: string;
+  entry: string;
+  previewTemplate?: string;
 }
 
 export interface AppResource {

@@ -5,7 +5,7 @@ export class WeatherTools {
   @tool({
     id: "weather.getForecast",
     name: "weather.getForecast",
-    description: "Get a mock forecast",
+    description: "Get a real forecast using Open-Meteo",
     inputSchema: {
       type: "object",
       properties: { location: { type: "string" }, days: { type: "integer", minimum: 1 } },

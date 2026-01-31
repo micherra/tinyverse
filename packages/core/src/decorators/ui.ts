@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 export interface TinyverseUiMapping {
   toolId: string;
   resourceUri: string;
+  previewTemplate?: string;
 }
 
 export type DecoratedComponent<P> = ComponentType<P> & { __tinyverse?: TinyverseUiMapping };

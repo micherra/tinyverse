@@ -6,6 +6,7 @@ import type { TinyverseConfig } from "../types.js";
 
 export interface LoadConfigOptions {
   outDir?: string;
+  toolGlobs?: string[];
 }
 
 export const loadConfig = async (
@@ -13,17 +14,43 @@ export const loadConfig = async (
   options: LoadConfigOptions = {},
 ): Promise<TinyverseConfig> => {
   const resolved = path.resolve(configPath);
-  if (!(await fs.pathExists(resolved))) {
-    throw new Error(`Config not found at ${resolved}`);
+  let raw: any;
+
+  if (await fs.pathExists(resolved)) {
+    raw = await fs.readJSON(resolved);
+  } else if (options.toolGlobs && options.toolGlobs.length > 0) {
+    raw = {
+      name: "tinyverse-adhoc",
+      version: "0.1.0",
+      toolGlobs: options.toolGlobs,
+      appResources: [],
+      tsconfig: "tsconfig.json",
+      outDir: ".tinyverse",
+      distDir: "dist",
+      server: {
+        host: "127.0.0.1",
+        port: 8787,
+        openBrowser: false,
+      },
+      bundler: {
+        type: "vite",
+        framework: "react",
+        base: "/",
+        assetsInlineLimit: 4096,
+      },
+    };
+  } else {
+    throw new Error(`Config not found at ${resolved}. Provide a config file or use --tools to specify tool sources.`);
   }
 
-  const raw = await fs.readJSON(resolved);
   const parsed = configSchema.parse(raw);
 
   const outDir = options.outDir ?? process.env.TINYVERSE_OUT_DIR ?? parsed.outDir;
+  const toolGlobs = options.toolGlobs ?? parsed.toolGlobs;
 
   return {
     ...parsed,
+    toolGlobs,
     outDir,
     distDir: process.env.TINYVERSE_DIST_DIR ?? parsed.distDir,
     server: {

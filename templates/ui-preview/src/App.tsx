@@ -61,6 +61,73 @@ const MessageText: React.FC<{ content: string }> = ({ content }) => {
 };
 
 const ToolIframe = ({ plan, data }: { plan: Plan; data: any }) => {
+  return null;
+};
+
+const StructuredPlan = ({ plan }: { plan: Plan }) => {
+  const [viewMode, setViewMode] = useState<"ui" | "json">("ui");
+
+  return (
+    <div className="structured-plan-container" style={{ marginTop: "12px" }}>
+      <div className="panel-head" style={{ marginBottom: "12px" }}>
+        <div>
+          <p className="eyebrow">Structured plan</p>
+          <h2 style={{ margin: 0, fontSize: "18px", color: "inherit" }}>
+            {viewMode === "ui" ? "Plan summary" : "Planned tool call"}
+          </h2>
+          <p style={{ margin: 0, fontSize: "14px", opacity: 0.8 }}>
+            {viewMode === "ui" ? "Summary of the selected tool and args." : "Planner output (tool + args)."}
+          </p>
+        </div>
+        <div className="tabs">
+          <button
+            type="button"
+            className={`tab-btn ${viewMode === "ui" ? "active" : ""}`}
+            onClick={() => setViewMode("ui")}
+          >
+            UI
+          </button>
+          <button
+            type="button"
+            className={`tab-btn ${viewMode === "json" ? "active" : ""}`}
+            onClick={() => setViewMode("json")}
+          >
+            JSON
+          </button>
+        </div>
+      </div>
+
+      {viewMode === "json" ? (
+        <CodeBlock title="plan" content={JSON.stringify(plan, null, 2)} />
+      ) : (
+        <div className="plan-ui-summary" style={{ padding: "12px", background: "#f8fafc", borderRadius: "10px" }}>
+          <p style={{ margin: "0 0 8px" }}>
+            Tool: <strong>{plan.toolId}</strong>
+          </p>
+          <p style={{ margin: 0 }}>Arguments:</p>
+          <ul style={{ margin: "8px 0 0", paddingLeft: "20px" }}>
+            {Object.entries(plan.args).map(([key, val]) => (
+              <li key={key}>
+                <code>{key}</code>: {typeof val === "object" ? JSON.stringify(val) : String(val)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ToolResponseCard = ({
+  plan,
+  data,
+}: {
+  plan: Plan;
+  data: any;
+}) => {
+  const [viewMode, setViewMode] = useState<"ui" | "json">("ui");
+  const hasUi = !!(plan.resourceUri && plan.resourceUri !== SHELL_RESOURCE_URI);
+
   const resourceHref = useMemo(() => {
     if (!plan.resourceUri || plan.resourceUri === SHELL_RESOURCE_URI) return null;
     const match = /^ui:\/\/([^/]+)\/(.+)$/.exec(plan.resourceUri);
@@ -69,25 +136,61 @@ const ToolIframe = ({ plan, data }: { plan: Plan; data: any }) => {
     return `${window.location.origin}/ui/${ns}/${res}`;
   }, [plan]);
 
-  if (!resourceHref) return null;
-
   return (
-    <div className="embedded-ui-container">
-      <iframe
-        className="resource-frame embedded"
-        src={resourceHref}
-        onLoad={(e) => {
-          e.currentTarget.contentWindow?.postMessage(
-            {
-              type: "tinyverse:toolResponse",
-              data: data,
-              toolId: plan.toolId,
-              resourceUri: plan.resourceUri,
-            },
-            "*",
-          );
-        }}
-      />
+    <div className="tool-response-container" style={{ marginTop: "12px" }}>
+      <div className="panel-head" style={{ marginBottom: "12px" }}>
+        <div>
+          <p className="eyebrow">Tool response</p>
+          <h2 style={{ margin: 0, fontSize: "18px", color: "inherit" }}>
+            {viewMode === "ui" ? "Tool UI" : "Structured result"}
+          </h2>
+          <p style={{ margin: 0, fontSize: "14px", opacity: 0.8 }}>
+            {viewMode === "ui"
+              ? "Interactive UI mapped to this tool."
+              : "Result returned from the dev server tool endpoint."}
+          </p>
+        </div>
+        {hasUi && resourceHref && (
+          <div className="tabs">
+            <button
+              type="button"
+              className={`tab-btn ${viewMode === "ui" ? "active" : ""}`}
+              onClick={() => setViewMode("ui")}
+            >
+              UI
+            </button>
+            <button
+              type="button"
+              className={`tab-btn ${viewMode === "json" ? "active" : ""}`}
+              onClick={() => setViewMode("json")}
+            >
+              JSON
+            </button>
+          </div>
+        )}
+      </div>
+
+      {viewMode === "json" || !hasUi || !resourceHref ? (
+        <CodeBlock title="result" content={JSON.stringify(data, null, 2)} />
+      ) : (
+        <div className="embedded-ui-container">
+          <iframe
+            className="resource-frame embedded"
+            src={resourceHref}
+            onLoad={(e) => {
+              e.currentTarget.contentWindow?.postMessage(
+                {
+                  type: "tinyverse:toolResponse",
+                  data: data,
+                  toolId: plan.toolId,
+                  resourceUri: plan.resourceUri,
+                },
+                "*",
+              );
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 };
@@ -96,50 +199,19 @@ const App: React.FC = () => {
   const [apiKey, setApiKey] = useState(() => getEnvApiKey() || localStorage.getItem("tv_preview_api_key") || "");
   const [userInput, setUserInput] = useState("What's the forecast for San Francisco?");
   const [messages, setMessages] = useState<Message[]>([
-    { id: "m-1", role: "assistant", content: "Ask a question; I'll pick the tool and UI for you." },
+    { id: "m-1", role: "assistant", content: "Ask a question; I'll plan the tool call and show you the result." },
   ]);
   const [availableTools, setAvailableTools] = useState<ToolMeta[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [toolResponse, setToolResponse] = useState<ToolResponse | null>(null);
   const [status, setStatus] = useState<"idle" | "planning" | "calling" | "done" | "error">("idle");
   const [error, setError] = useState<string>("");
-  const [viewMode, setViewMode] = useState<"ui" | "json">("ui");
   const hasApiKey = Boolean(apiKey);
-
-  const resourceHref = useMemo(() => {
-    if (!plan?.resourceUri || plan.resourceUri === SHELL_RESOURCE_URI) return null;
-    const match = /^ui:\/\/([^/]+)\/(.+)$/.exec(plan.resourceUri);
-    if (!match) return null;
-    const [, ns, res] = match;
-    return `${window.location.origin}/ui/${ns}/${res}`;
-  }, [plan]);
 
   useEffect(() => {
     if (apiKey) {
       localStorage.setItem("tv_preview_api_key", apiKey);
     }
   }, [apiKey]);
-
-  useEffect(() => {
-    if (status === "done" && toolResponse && resourceHref) {
-      const frames = document.getElementsByTagName("iframe");
-      for (let i = 0; i < frames.length; i++) {
-        const frame = frames[i];
-        if (frame.src === resourceHref) {
-          frame.contentWindow?.postMessage(
-            {
-              type: "tinyverse:toolResponse",
-              data: toolResponse,
-              toolId: plan?.toolId,
-              resourceUri: plan?.resourceUri,
-            },
-            "*",
-          );
-        }
-      }
-    }
-  }, [status, toolResponse, resourceHref, plan]);
 
   useEffect(() => {
     const loadTools = async () => {
@@ -275,55 +347,35 @@ const App: React.FC = () => {
     if (!userInput.trim() || !hasApiKey || availableTools.length === 0) return;
     setStatus("planning");
     setError("");
-    setToolResponse(null);
 
     const userMessage: Message = { id: crypto.randomUUID(), role: "user", content: userInput };
     setMessages((prev) => [...prev, userMessage]);
 
     try {
       const nextPlan = await planWithOpenAI(userInput);
-      setPlan(nextPlan);
       setMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: `Planning tool: **${nextPlan.toolId}**\n\n**Arguments:**\n\`\`\`json\n${JSON.stringify(nextPlan.args, null, 2)}\n\`\`\``,
+          content: `Planning tool: **${nextPlan.toolId}**`,
+          plan: nextPlan,
         },
       ]);
       setStatus("calling");
       const data = await callTool(nextPlan);
-      setToolResponse(data);
       setStatus("done");
 
-      const toolMeta = availableTools.find((t) => t.toolId === nextPlan.toolId);
-      const hasUi = !!(toolMeta?.resourceUri && toolMeta.resourceUri !== SHELL_RESOURCE_URI);
-
-      if (!hasUi) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: `No UI mapped for **${nextPlan.toolId}**. Here is the result:\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``,
-            data,
-            plan: nextPlan,
-          },
-        ]);
-        setViewMode("json");
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: `Tool **${nextPlan.toolId}** executed. Rendering UI...`,
-            data,
-            plan: nextPlan,
-          },
-        ]);
-        setViewMode("ui");
-      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: `Tool **${nextPlan.toolId}** executed.`,
+          data,
+          plan: nextPlan,
+        },
+      ]);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Preview failed";
       setError(message);
@@ -373,15 +425,13 @@ const App: React.FC = () => {
 
           <div className="chat-feed">
             {messages.map((msg) => {
-              const toolMeta = msg.plan ? availableTools.find((t) => t.toolId === msg.plan!.toolId) : null;
-              const hasUi = !!(toolMeta?.resourceUri && toolMeta.resourceUri !== SHELL_RESOURCE_URI);
-
               return (
                 <div key={msg.id} className={`bubble ${msg.role}`}>
                   <div className="bubble-role">{msg.role === "assistant" ? "Assistant" : "You"}</div>
                   <MessageText content={msg.content} />
-                  {msg.role === "assistant" && msg.plan && msg.data && hasUi && (
-                    <ToolIframe plan={msg.plan} data={msg.data} />
+                  {msg.plan && !msg.data && <StructuredPlan plan={msg.plan} />}
+                  {msg.plan && msg.data && (
+                    <ToolResponseCard plan={msg.plan} data={msg.data} />
                   )}
                 </div>
               );
@@ -410,79 +460,6 @@ const App: React.FC = () => {
               {status === "calling" ? <Status label="Calling tool" tone="info" /> : null}
             </div>
           </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-head">
-            <p className="eyebrow">Structured plan</p>
-            <h2>Planned tool call</h2>
-            <p>Planner output (tool + args).</p>
-          </div>
-          {plan ? (
-            <CodeBlock title="plan" content={JSON.stringify(plan, null, 2)} />
-          ) : (
-            <div className="placeholder">No plan yet — send a request.</div>
-          )}
-        </section>
-
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <p className="eyebrow">Tool response</p>
-              <h2>{viewMode === "ui" ? "Tool UI" : "Structured result"}</h2>
-              <p>
-                {viewMode === "ui"
-                  ? "Interactive UI mapped to this tool."
-                  : "Result returned from the dev server tool endpoint."}
-              </p>
-            </div>
-            {toolResponse && resourceHref ? (
-              <div className="tabs">
-                <button
-                  type="button"
-                  className={`tab-btn ${viewMode === "ui" ? "active" : ""}`}
-                  onClick={() => setViewMode("ui")}
-                >
-                  UI
-                </button>
-                <button
-                  type="button"
-                  className={`tab-btn ${viewMode === "json" ? "active" : ""}`}
-                  onClick={() => setViewMode("json")}
-                >
-                  JSON
-                </button>
-              </div>
-            ) : null}
-          </div>
-          {error ? <div className="error-box">{error}</div> : null}
-          {toolResponse ? (
-            <>
-              {viewMode === "json" ? (
-                <CodeBlock title="result" content={JSON.stringify(toolResponse, null, 2)} />
-              ) : resourceHref ? (
-                <iframe
-                  className="resource-frame"
-                  src={resourceHref}
-                  onLoad={(e) => {
-                    e.currentTarget.contentWindow?.postMessage(
-                      {
-                        type: "tinyverse:toolResponse",
-                        data: toolResponse,
-                        toolId: plan?.toolId,
-                        resourceUri: plan?.resourceUri,
-                      },
-                      "*",
-                    );
-                  }}
-                />
-              ) : (
-                <div className="placeholder">No UI resource URI mapped to this tool.</div>
-              )}
-            </>
-          ) : (
-            <div className="placeholder">Awaiting tool call…</div>
-          )}
         </section>
       </main>
     </div>

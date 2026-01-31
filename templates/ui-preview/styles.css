@@ -337,32 +337,48 @@ pre {
 }
 
 .bubble.assistant .message-pre {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .bubble {
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: 16px;
   border: 1px solid #e2e8f0;
   background: #ffffff;
 }
 
+.structured-plan-container,
+.tool-response-container {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 18px;
+  color: #0f172a;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+.bubble.assistant .structured-plan-container,
+.bubble.assistant .tool-response-container {
+  color: #0f172a; /* Keep dark text inside assistant bubble */
+}
+
 .bubble.assistant {
-  background: #0f172a;
-  color: #e2e8f0;
-  border-color: #1e293b;
+  background: #f8fafc;
+  color: #0f172a;
+  border-color: #e2e8f0;
 }
 
 .bubble-role {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #475569;
-  margin-bottom: 4px;
+  color: #64748b;
+  margin-bottom: 8px;
+  font-weight: 600;
 }
 
 .bubble.assistant .bubble-role {
-  color: #cbd5e1;
+  color: #64748b;
 }
 
 .bubble-text {

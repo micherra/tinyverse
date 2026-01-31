@@ -3,7 +3,7 @@
   "name": "tinyverse-sample-preview",
   "version": "0.1.0",
   "generated_by": "tinyverse-builder",
-  "generated_at": "2026-01-31T00:44:27.607Z",
+  "generated_at": "2026-01-31T01:05:44.911Z",
   "outDir": "/Users/michelle/Documents/Codesmith/tinyverse/examples/weather-app/dist/preview",
   "resources": [
     {
@@ -11,8 +11,8 @@
       "toolId": "_tinyverse.preview",
       "entryFile": "tinyverse/preview/index.html",
       "assets": [
-        "tinyverse/preview/assets/index-DR9c51hx.js",
-        "tinyverse/preview/assets/index-Mranj_Sx.css"
+        "tinyverse/preview/assets/index-CLsNTdtR.js",
+        "tinyverse/preview/assets/index-Vp__U4xM.css"
       ]
     },
     {

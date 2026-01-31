@@ -120,15 +120,15 @@ const parseResourceUri = (uri: string): { namespace: string; resource: string } 
   return match ? { namespace: match[1], resource: match[2] } : null;
 };
 
-const isPortAccessError = (err: any) => {
-  const code = err?.code;
+const isPortAccessError = (err: unknown) => {
+  const code = (err as { code?: string })?.code;
   return code === "EADDRINUSE" || code === "EACCES" || code === "EPERM";
 };
 
 const resolveRunningPort = (server: ServerHandle | null, fallback: number) => {
-  const address = (server as any)?.app?.server?.address?.();
+  const address = server?.app.server.address();
   if (address && typeof address === "object" && "port" in address) {
-    return (address as any).port ?? fallback;
+    return address.port;
   }
   return fallback;
 };
@@ -199,7 +199,7 @@ const scaffoldWeatherDemo = async () => {
       "",
       "    const geoRes = await fetch(geocodeUrl);",
       "    if (!geoRes.ok) throw new Error(`Geocoding failed: ${geoRes.status}`);",
-      "    const geoJson = await geoRes.json() as any;",
+      "    const geoJson = (await geoRes.json()) as { results?: { latitude: number; longitude: number; name: string }[] };",
       "    const first = geoJson?.results?.[0];",
       "    if (!first) throw new Error(`Location not found: ${location}`);",
       "",
@@ -214,7 +214,7 @@ const scaffoldWeatherDemo = async () => {
       "",
       "    const forecastRes = await fetch(forecastUrl);",
       "    if (!forecastRes.ok) throw new Error(`Forecast request failed: ${forecastRes.status}`);",
-      "    const forecastJson = await forecastRes.json() as any;",
+      "    const forecastJson = (await forecastRes.json()) as { daily?: { time: string[]; temperature_2m_max: number[]; temperature_2m_min: number[]; precipitation_probability_max: number[] } };",
       "",
       "    const dates = forecastJson?.daily?.time ?? [];",
       "    const highs = forecastJson?.daily?.temperature_2m_max ?? [];",
@@ -242,8 +242,8 @@ const scaffoldWeatherDemo = async () => {
       'import { tinyverseUi } from "@tinyverse/core";',
       'import "./styles.css";',
       "",
-      'const ForecastCards = ({ data, toolId }: { data: any; toolId?: string }) => {',
-      '  const list = data?.result?.forecast ?? data?.forecast ?? [];',
+      'const ForecastCards = ({ data, toolId }: { data: { forecast?: string[] }; toolId?: string }) => {',
+      '  const list = (data as any)?.result?.forecast ?? data?.forecast ?? [];',
       "  return (",
       '    <div className="forecast-grid">',
       "      {list.map((line: string, idx: number) => (",
@@ -359,9 +359,10 @@ const generateHandlerStubs = async (tools: { id: string }[]) => {
     if (tool.id === "weather.getForecast") {
       contents = [
         "// Real implementation for weather.getForecast",
-        "export const handler = async (input: any) => {",
-        '  const location = input?.location?.trim?.() || "San Francisco";',
-        "  const days = Math.min(Math.max(input?.days ?? 3, 1), 7);",
+        "export const handler = async (input: unknown) => {",
+        "  const args = input as { location?: string; days?: number };",
+        '  const location = args?.location?.trim?.() || "San Francisco";',
+        "  const days = Math.min(Math.max(args?.days ?? 3, 1), 7);",
         "",
         '  const geocodeUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");',
         '  geocodeUrl.searchParams.set("name", location);',
@@ -369,7 +370,7 @@ const generateHandlerStubs = async (tools: { id: string }[]) => {
         "",
         "  const geoRes = await fetch(geocodeUrl);",
         "  if (!geoRes.ok) return { error: `Geocoding failed: ${geoRes.status}` };",
-        "  const geoJson = (await geoRes.json()) as any;",
+        "  const geoJson = (await geoRes.json()) as { results?: { latitude: number; longitude: number; name?: string }[] };",
         "  const first = geoJson?.results?.[0];",
         "  if (!first) return { error: `Location not found: ${location}` };",
         "",
@@ -386,7 +387,7 @@ const generateHandlerStubs = async (tools: { id: string }[]) => {
         "",
         "  const forecastRes = await fetch(forecastUrl);",
         "  if (!forecastRes.ok) return { error: `Forecast request failed: ${forecastRes.status}` };",
-        "  const forecastJson = (await forecastRes.json()) as any;",
+        "  const forecastJson = (await forecastRes.json()) as { daily?: { time: string[]; temperature_2m_max: number[]; temperature_2m_min: number[]; precipitation_probability_max: number[] } };",
         "  const dates: string[] = forecastJson?.daily?.time ?? [];",
         "  const highs: number[] = forecastJson?.daily?.temperature_2m_max ?? [];",
         "  const lows: number[] = forecastJson?.daily?.temperature_2m_min ?? [];",
@@ -406,7 +407,7 @@ const generateHandlerStubs = async (tools: { id: string }[]) => {
     } else {
       contents = [
         "// Auto-generated stub for Tinyverse dev server",
-        "export const handler = async (input: any) => {",
+        "export const handler = async (input: unknown) => {",
         `  return { message: "NotImplemented", toolId: "${tool.id}", input };`,
         "};",
         "",
@@ -419,6 +420,139 @@ const generateHandlerStubs = async (tools: { id: string }[]) => {
 const loadCliConfig = async (options: GlobalOptions): Promise<TinyverseConfig> => {
   return loadConfig(options.config, { outDir: options.out, toolGlobs: options.tools });
 };
+
+class DevRunner {
+  private server: ServerHandle | null = null;
+  private running = false;
+  private queued = false;
+  private browserOpened = false;
+
+  constructor(
+    private commandName: "dev" | "preview",
+    private globals: GlobalOptions,
+    private configFactory: () => Promise<TinyverseConfig>,
+    private options: { open?: boolean; openResourceUri?: string } = {},
+  ) {}
+
+  async restart() {
+    if (this.running) {
+      this.queued = true;
+      return;
+    }
+    this.running = true;
+
+    try {
+      const config = await this.configFactory();
+      if (this.options.open) {
+        config.server.openBrowser = true;
+      }
+
+      const extractResult = await extractTools(config, { strict: this.globals.strict });
+      const buildResult = await buildApps(config, { strict: this.globals.strict });
+      await generateHandlerStubs(extractResult.manifest.tools);
+
+      const diagnostics = [...extractResult.diagnostics, ...buildResult.diagnostics];
+      const success = extractResult.success && buildResult.success;
+
+      if (this.globals.json || diagnostics.length > 0) {
+        emitDiagnostics({
+          command: this.commandName,
+          diagnostics,
+          success,
+          json: this.globals.json,
+          logger,
+          context: {
+            toolManifestPath: path.join(config.outDir, "tool.manifest.json"),
+            appsManifestPath: path.join(config.outDir, "apps.manifest.json"),
+            server: { host: config.server.host, port: config.server.port },
+          },
+        });
+      }
+
+      if (success) {
+        if (this.server) {
+          await this.server.stop();
+        }
+        await generateServerArtifacts(config, extractResult.manifest, buildResult.manifest);
+
+        const startServer = async (port: number) => {
+          const handle = await createServer({
+            outDir: config.outDir,
+            distDir: config.distDir,
+            host: config.server.host,
+            port,
+          });
+          await handle.start();
+          return handle;
+        };
+
+        let startError: unknown = null;
+        try {
+          this.server = await startServer(config.server.port);
+        } catch (err) {
+          startError = err;
+          if (isPortAccessError(err) && config.server.port !== 0) {
+            if (!this.globals.json) {
+              logger.warn(
+                { host: config.server.host, port: config.server.port, err },
+                "Port unavailable; retrying on a random port",
+              );
+            }
+            try {
+              this.server = await startServer(0);
+            } catch (retryErr) {
+              startError = retryErr;
+            }
+          }
+        }
+
+        if (!this.server) {
+          if (!this.globals.json) {
+            logger.error({ err: startError }, "Dev server failed to start");
+          }
+        } else {
+          const runningPort = resolveRunningPort(this.server, config.server.port);
+          if (!this.globals.json) {
+            logger.info(
+              { host: config.server.host, port: runningPort },
+              `${this.commandName === "preview" ? "Preview" : "Dev"} server running`,
+            );
+          }
+          if (config.server.openBrowser && !this.browserOpened) {
+            const resourceUri = this.options.openResourceUri ?? config.appResources[0]?.resourceUri;
+            if (resourceUri) {
+              const parsed = parseResourceUri(resourceUri);
+              if (parsed) {
+                const url = `http://${config.server.host}:${runningPort}/ui/${parsed.namespace}/${parsed.resource}`;
+                await tryOpenBrowser(url, logger);
+                this.browserOpened = true;
+              }
+            }
+          }
+        }
+      } else {
+        if (!this.globals.json) {
+          logger.error("Skipping server restart due to diagnostics");
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, "Unexpected error in dev cycle");
+    } finally {
+      this.running = false;
+      if (this.queued) {
+        this.queued = false;
+        await this.restart();
+      }
+    }
+  }
+
+  async stop() {
+    if (this.server) {
+      await this.server.stop();
+      this.server = null;
+    }
+  }
+}
 
 const program = new Command();
 program.name("tinyverse").description("Tinyverse CLI").version("0.1.0");
@@ -497,118 +631,11 @@ program
   .option("--open", "Open browser when ready")
   .action(async (opts, command) => {
     const globals = getGlobalOptions(command);
+    const runner = new DevRunner("dev", globals, () => loadCliConfig(globals), { open: opts.open as boolean });
+
+    await runner.restart();
+
     const initialConfig = await loadCliConfig(globals);
-    let server: ServerHandle | null = null;
-    let running = false;
-    let queued = false;
-    let browserOpened = false;
-
-    const restart = async () => {
-      if (running) {
-        queued = true;
-        return;
-      }
-      running = true;
-      const config = await loadCliConfig(globals);
-      if (opts.open) {
-        config.server.openBrowser = true;
-      }
-      const extractResult = await extractTools(config, { strict: globals.strict });
-      const buildResult = await buildApps(config, { strict: globals.strict });
-      await generateHandlerStubs(extractResult.manifest.tools);
-
-      const diagnostics = [...extractResult.diagnostics, ...buildResult.diagnostics];
-      const success = extractResult.success && buildResult.success;
-
-      if (globals.json || diagnostics.length > 0) {
-        emitDiagnostics({
-          command: "dev",
-          diagnostics,
-          success,
-          json: globals.json,
-          logger,
-          context: {
-            toolManifestPath: path.join(config.outDir, "tool.manifest.json"),
-            appsManifestPath: path.join(config.outDir, "apps.manifest.json"),
-            server: { host: config.server.host, port: config.server.port },
-          },
-        });
-      }
-
-      if (success) {
-        if (server) {
-          await server.stop();
-        }
-        await generateServerArtifacts(config, extractResult.manifest, buildResult.manifest);
-        const startServer = async (port: number) => {
-          const handle = await createServer({
-            outDir: config.outDir,
-            distDir: config.distDir,
-            host: config.server.host,
-            port,
-          });
-          await handle.start();
-          return handle;
-        };
-
-        let startError: any = null;
-        try {
-          server = await startServer(config.server.port);
-        } catch (err) {
-          startError = err;
-          if (isPortAccessError(err) && config.server.port !== 0) {
-            if (!globals.json) {
-              logger.warn(
-                { host: config.server.host, port: config.server.port, err },
-                "Port unavailable; retrying on a random port",
-              );
-            }
-            try {
-              server = await startServer(0);
-            } catch (retryErr) {
-              startError = retryErr;
-            }
-          }
-        }
-
-        if (!server) {
-          if (!globals.json) {
-            logger.error({ err: startError }, "Dev server failed to start");
-          }
-          running = false;
-          if (queued) {
-            queued = false;
-            restart();
-          }
-          return;
-        }
-
-        const runningPort = resolveRunningPort(server, config.server.port);
-        if (!globals.json) {
-          logger.info({ host: config.server.host, port: runningPort }, "Dev server running");
-        }
-        if (config.server.openBrowser && config.appResources.length > 0 && !browserOpened) {
-          const parsed = parseResourceUri(config.appResources[0].resourceUri);
-          if (parsed) {
-            const url = `http://${config.server.host}:${runningPort}/ui/${parsed.namespace}/${parsed.resource}`;
-            await tryOpenBrowser(url, logger);
-            browserOpened = true;
-          }
-        }
-      } else {
-        if (!globals.json) {
-          logger.error("Skipping server restart due to diagnostics");
-        }
-      }
-      running = false;
-      if (queued) {
-        queued = false;
-        restart();
-      }
-    };
-
-    await restart();
-
     const watchPaths = [
       ...initialConfig.toolGlobs,
       ...initialConfig.appResources.map((r) => r.entry),
@@ -619,12 +646,12 @@ program
       if (!globals.json) {
         logger.debug({ event, path }, "Watch event triggered restart");
       }
-      restart();
+      runner.restart();
     });
 
     const shutdown = async () => {
       await watcher.close();
-      if (server) await server.stop();
+      await runner.stop();
       process.exit(0);
     };
 
@@ -706,113 +733,12 @@ program
       };
     };
 
-    let server: ServerHandle | null = null;
-    let running = false;
-    let queued = false;
-    let browserOpened = false;
+    const runner = new DevRunner("preview", globals, buildPreviewConfig, {
+      open: opts.open as boolean,
+      openResourceUri: shellResourceUri,
+    });
 
-    const restart = async () => {
-      if (running) {
-        queued = true;
-        return;
-      }
-      running = true;
-      const config = await buildPreviewConfig();
-      const extractResult = await extractTools(config, { strict: globals.strict });
-      const buildResult = await buildApps(config, { strict: globals.strict });
-      await generateHandlerStubs(extractResult.manifest.tools);
-
-      const diagnostics = [...extractResult.diagnostics, ...buildResult.diagnostics];
-      const success = extractResult.success && buildResult.success;
-
-      if (globals.json || diagnostics.length > 0) {
-        emitDiagnostics({
-          command: "preview",
-          diagnostics,
-          success,
-          json: globals.json,
-          logger,
-          context: {
-            toolManifestPath: path.join(config.outDir, "tool.manifest.json"),
-            appsManifestPath: path.join(config.outDir, "apps.manifest.json"),
-            server: { host: config.server.host, port: config.server.port },
-          },
-        });
-      }
-
-      if (success) {
-        if (server) {
-          await server.stop();
-        }
-        await generateServerArtifacts(config, extractResult.manifest, buildResult.manifest);
-
-        const startServer = async (port: number) => {
-          const handle = await createServer({
-            outDir: config.outDir,
-            distDir: config.distDir,
-            host: config.server.host,
-            port,
-          });
-          await handle.start();
-          return handle;
-        };
-
-        let startError: any = null;
-        try {
-          server = await startServer(config.server.port);
-        } catch (err) {
-          startError = err;
-          if (isPortAccessError(err) && config.server.port !== 0) {
-            if (!globals.json) {
-              logger.warn(
-                { host: config.server.host, port: config.server.port, err },
-                "Port unavailable; retrying on a random port",
-              );
-            }
-            try {
-              server = await startServer(0);
-            } catch (retryErr) {
-              startError = retryErr;
-            }
-          }
-        }
-
-        if (!server) {
-          if (!globals.json) {
-            logger.error({ err: startError }, "Dev server failed to start");
-          }
-          running = false;
-          if (queued) {
-            queued = false;
-            restart();
-          }
-          return;
-        }
-
-        const runningPort = resolveRunningPort(server, config.server.port);
-        if (!globals.json) {
-          logger.info({ host: config.server.host, port: runningPort }, "Preview server running");
-        }
-        if (config.server.openBrowser && !browserOpened) {
-          const parsed = parseResourceUri(shellResourceUri);
-          if (parsed) {
-            const url = `http://${config.server.host}:${runningPort}/ui/${parsed.namespace}/${parsed.resource}`;
-            await tryOpenBrowser(url, logger);
-            browserOpened = true;
-          }
-        }
-      } else if (!globals.json) {
-        logger.error("Skipping server restart due to diagnostics");
-      }
-
-      running = false;
-      if (queued) {
-        queued = false;
-        restart();
-      }
-    };
-
-    await restart();
+    await runner.restart();
 
     const configForWatch = await buildPreviewConfig();
     const watchPaths = [
@@ -825,12 +751,12 @@ program
       if (!globals.json) {
         logger.debug({ event, path }, "Watch event triggered restart");
       }
-      restart();
+      runner.restart();
     });
 
     const shutdown = async () => {
       await watcher.close();
-      if (server) await server.stop();
+      await runner.stop();
       process.exit(0);
     };
 

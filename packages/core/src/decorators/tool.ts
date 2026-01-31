@@ -9,9 +9,13 @@ export interface ToolDecoratorOptions {
 }
 
 export const tool = (options: ToolDecoratorOptions) => {
-  return (_target: any, _propertyKey: string | symbol, descriptor?: PropertyDescriptor) => {
+  return (
+    _target: object,
+    _propertyKey: string | symbol,
+    descriptor?: PropertyDescriptor,
+  ) => {
     if (descriptor && typeof descriptor.value === "function") {
-      (descriptor.value as any).__tool = options;
+      (descriptor.value as { __tool?: ToolDecoratorOptions }).__tool = options;
     }
     return descriptor;
   };

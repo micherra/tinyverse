@@ -71,7 +71,7 @@ const loadTsConfig = (
   return { options: parsed.options, fileNames: parsed.fileNames };
 };
 
-const evaluateLiteral = (node: ts.Expression): any | undefined => {
+const evaluateLiteral = (node: ts.Expression): unknown | undefined => {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
   if (ts.isNumericLiteral(node)) return Number(node.text);
   if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
@@ -79,7 +79,7 @@ const evaluateLiteral = (node: ts.Expression): any | undefined => {
   if (node.kind === ts.SyntaxKind.NullKeyword) return null;
   if (ts.isArrayLiteralExpression(node)) return node.elements.map(evaluateLiteral);
   if (ts.isObjectLiteralExpression(node)) {
-    const obj: Record<string, any> = {};
+    const obj: Record<string, unknown> = {};
     for (const prop of node.properties) {
       if (!ts.isPropertyAssignment(prop) && !ts.isShorthandPropertyAssignment(prop)) continue;
       const name = ts.isShorthandPropertyAssignment(prop)
@@ -98,7 +98,7 @@ const evaluateLiteral = (node: ts.Expression): any | undefined => {
   return undefined;
 };
 
-const parseToolDecorator = (decorator: ts.Decorator): Record<string, any> | null => {
+const parseToolDecorator = (decorator: ts.Decorator): Record<string, unknown> | null => {
   const expr = decorator.expression;
   if (!ts.isCallExpression(expr)) return null;
   const decoratorName = ts.isIdentifier(expr.expression) ? expr.expression.text : undefined;
@@ -106,10 +106,10 @@ const parseToolDecorator = (decorator: ts.Decorator): Record<string, any> | null
   const [arg] = expr.arguments;
   if (!arg || !ts.isObjectLiteralExpression(arg)) return null;
   const parsed = evaluateLiteral(arg);
-  return parsed && typeof parsed === "object" ? parsed : null;
+  return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
 };
 
-const parseUiDecorator = (decorator: ts.Decorator): Record<string, any> | null => {
+const parseUiDecorator = (decorator: ts.Decorator): Record<string, unknown> | null => {
   const expr = decorator.expression;
   if (!ts.isCallExpression(expr)) return null;
   const decoratorName = ts.isIdentifier(expr.expression) ? expr.expression.text : undefined;
@@ -117,7 +117,7 @@ const parseUiDecorator = (decorator: ts.Decorator): Record<string, any> | null =
   const [arg] = expr.arguments;
   if (!arg || !ts.isObjectLiteralExpression(arg)) return null;
   const parsed = evaluateLiteral(arg);
-  return parsed && typeof parsed === "object" ? parsed : null;
+  return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
 };
 
 const isStringLiteralUnion = (type: ts.Type): string[] | null => {
@@ -143,8 +143,8 @@ const inferSchemaFromType = (
   toolId: string,
   pathLabel: string,
   seen: Set<number>,
-): any | undefined => {
-  const typeId = (type as any).id as number | undefined;
+): unknown | undefined => {
+  const typeId = (type as { id?: number }).id;
   if (typeId && seen.has(typeId)) {
     return undefined;
   }
@@ -190,12 +190,15 @@ const inferSchemaFromType = (
   }
 
   if (type.getFlags() & ts.TypeFlags.Object) {
-    const properties: Record<string, any> = {};
+    const properties: Record<string, unknown> = {};
     const required: string[] = [];
 
     for (const prop of checker.getPropertiesOfType(type)) {
       const decl = prop.valueDeclaration ?? prop.declarations?.[0];
-      const propType = checker.getTypeOfSymbolAtLocation(prop, decl ?? (type as any));
+      // Use the symbol's declaration if available, otherwise we may need to use any for this specific TS internal
+      const propType = decl
+        ? checker.getTypeOfSymbolAtLocation(prop, decl)
+        : checker.getTypeOfSymbolAtLocation(prop, type as unknown as ts.Node);
       const schema = inferSchemaFromType(
         propType,
         checker,
@@ -210,13 +213,13 @@ const inferSchemaFromType = (
       }
       const isOptional =
         Boolean(prop.getFlags() & ts.SymbolFlags.Optional) ||
-        (decl && "questionToken" in decl && decl.questionToken !== undefined);
+        (decl && "questionToken" in decl && (decl as { questionToken?: unknown }).questionToken !== undefined);
       if (!isOptional) {
         required.push(prop.name);
       }
     }
 
-    const result: Record<string, any> = { type: "object", properties };
+    const result: Record<string, unknown> = { type: "object", properties };
     if (required.length > 0) {
       result.required = required;
     }
@@ -239,7 +242,7 @@ const inferInputSchema = (
   diagnostics: Diagnostic[],
   file: string,
   toolId: string,
-): any | undefined => {
+): unknown | undefined => {
   if (!("parameters" in node) || !(node as ts.FunctionLikeDeclarationBase).parameters?.length) {
     return { type: "object", properties: {} };
   }
@@ -264,7 +267,7 @@ const inferOutputSchema = (
   diagnostics: Diagnostic[],
   file: string,
   toolId: string,
-): any | undefined => {
+): unknown | undefined => {
   if (!ts.isFunctionLike(node)) return undefined;
   const signature = checker.getSignatureFromDeclaration(node);
   if (!signature) return undefined;
@@ -327,8 +330,8 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
           const toolMeta = parseToolDecorator(decorator);
           if (toolMeta) {
             const id =
-              toolMeta.id ??
-              toolMeta.name ??
+              (toolMeta.id as string | undefined) ??
+              (toolMeta.name as string | undefined) ??
               (ts.isFunctionLike(node) && node.name ? node.name.getText() : undefined);
             if (!id) {
               addDiagnostic(diagnostics, "error", "TV_DIAG_TOOL_ID_MISSING", `Tool missing id in ${file}`);
@@ -354,7 +357,8 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
               );
             }
 
-            if (!toolMeta.resourceUri) {
+            const resourceUri = toolMeta.resourceUri as string | undefined;
+            if (!resourceUri) {
               addDiagnostic(
                 diagnostics,
                 "warning",
@@ -362,12 +366,12 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
                 `Tool ${id} is missing resourceUri; ensure it maps to a ui:// namespace/resource`,
                 file,
               );
-            } else if (!/^ui:\/\/[A-Za-z0-9_\-]+\/[A-Za-z0-9_\-]+$/.test(toolMeta.resourceUri)) {
+            } else if (!/^ui:\/\/[A-Za-z0-9_\-]+\/[A-Za-z0-9_\-]+$/.test(resourceUri)) {
               addDiagnostic(
                 diagnostics,
                 "error",
                 "TV_DIAG_UI_URI_INVALID",
-                `Invalid resourceUri for tool ${id}: ${toolMeta.resourceUri}`,
+                `Invalid resourceUri for tool ${id}: ${resourceUri}`,
                 file,
                 "Expected format ui://namespace/resource",
               );
@@ -375,18 +379,20 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
 
             tools.push({
               id,
-              name: toolMeta.name ?? id,
-              description: toolMeta.description,
+              name: (toolMeta.name as string | undefined) ?? id,
+              description: toolMeta.description as string | undefined,
               inputSchema: inputSchema ?? toolMeta.inputSchema ?? {},
               outputSchema,
-              resourceUri: toolMeta.resourceUri,
-              previewTemplate: toolMeta.previewTemplate,
+              resourceUri,
+              previewTemplate: toolMeta.previewTemplate as string | undefined,
             });
           }
 
           const uiMeta = parseUiDecorator(decorator);
           if (uiMeta) {
-            if (!uiMeta.toolId || !uiMeta.resourceUri) {
+            const toolId = uiMeta.toolId as string | undefined;
+            const resourceUri = uiMeta.resourceUri as string | undefined;
+            if (!toolId || !resourceUri) {
               addDiagnostic(
                 diagnostics,
                 "error",
@@ -397,10 +403,10 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
               return;
             }
             uiComponents.push({
-              toolId: uiMeta.toolId,
-              resourceUri: uiMeta.resourceUri,
+              toolId,
+              resourceUri,
               entry: file,
-              previewTemplate: uiMeta.previewTemplate,
+              previewTemplate: uiMeta.previewTemplate as string | undefined,
             });
           }
         });

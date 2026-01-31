@@ -92,7 +92,7 @@ export const createServer = async (options: ServerOptions): Promise<ServerHandle
 
   app.get("/tools", async () => toolManifest.tools ?? []);
 
-  app.post<{ Params: { toolId: string }; Body: any }>("/tools/:toolId", async (request, reply) => {
+  app.post<{ Params: { toolId: string }; Body: unknown }>("/tools/:toolId", async (request, reply) => {
     const toolId = request.params.toolId;
     const handlerPath = await resolveHandlerPath(toolId);
     if (!handlerPath) {
@@ -101,7 +101,7 @@ export const createServer = async (options: ServerOptions): Promise<ServerHandle
     }
     try {
       const module = await import(pathToFileURL(handlerPath).href);
-      const handler = module.handler as (input: any) => any;
+      const handler = module.handler as (input: unknown) => unknown;
       const result = await handler(request.body ?? {});
       return { result };
     } catch (err) {

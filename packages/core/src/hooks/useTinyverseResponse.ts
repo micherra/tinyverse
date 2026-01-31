@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 
 export interface TinyverseMessage {
   type: "tinyverse:toolResponse";
-  data: any;
+  data: unknown;
   toolId?: string;
   resourceUri?: string;
 }

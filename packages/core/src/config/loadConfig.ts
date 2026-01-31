@@ -14,7 +14,7 @@ export const loadConfig = async (
   options: LoadConfigOptions = {},
 ): Promise<TinyverseConfig> => {
   const resolved = path.resolve(configPath);
-  let raw: any;
+  let raw: unknown;
 
   if (await fs.pathExists(resolved)) {
     raw = await fs.readJSON(resolved);

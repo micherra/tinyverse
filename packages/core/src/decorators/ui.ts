@@ -8,7 +8,8 @@ export interface TinyverseUiMapping {
 
 export type DecoratedComponent<P> = ComponentType<P> & { __tinyverse?: TinyverseUiMapping };
 
-export const tinyverseUi = (mapping: TinyverseUiMapping) => {
+export const tinyverseUi = (options: TinyverseUiMapping | string) => {
+  const mapping = typeof options === "string" ? { toolId: options, resourceUri: "" } : options;
   return <P,>(Component: DecoratedComponent<P>) => {
     (Component as DecoratedComponent<P>).__tinyverse = mapping;
     return Component;

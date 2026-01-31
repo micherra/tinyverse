@@ -7,6 +7,7 @@ import type { TinyverseConfig } from "../types.js";
 export interface LoadConfigOptions {
   outDir?: string;
   toolGlobs?: string[];
+  uiGlobs?: string[];
 }
 
 export const loadConfig = async (
@@ -23,6 +24,7 @@ export const loadConfig = async (
       name: "tinyverse-adhoc",
       version: "0.1.0",
       toolGlobs: options.toolGlobs,
+      uiGlobs: options.uiGlobs,
       appResources: [],
       tsconfig: "tsconfig.json",
       outDir: ".tinyverse",
@@ -47,10 +49,12 @@ export const loadConfig = async (
 
   const outDir = options.outDir ?? process.env.TINYVERSE_OUT_DIR ?? parsed.outDir;
   const toolGlobs = options.toolGlobs ?? parsed.toolGlobs;
+  const uiGlobs = options.uiGlobs ?? parsed.uiGlobs;
 
   return {
     ...parsed,
     toolGlobs,
+    uiGlobs,
     outDir,
     distDir: process.env.TINYVERSE_DIST_DIR ?? parsed.distDir,
     server: {

@@ -2,13 +2,7 @@
   "name": "tinyverse-sample",
   "version": "0.1.0",
   "toolGlobs": ["tools/**/*.ts"],
-  "appResources": [
-    {
-      "toolId": "weather.getForecast",
-      "resourceUri": "ui://weather/forecast",
-      "entry": "apps/weather/forecast/ForecastCards.tsx"
-    }
-  ],
+  "uiGlobs": ["apps/**/*.tsx"],
   "tsconfig": "tsconfig.json",
   "outDir": ".tinyverse",
   "distDir": "dist",

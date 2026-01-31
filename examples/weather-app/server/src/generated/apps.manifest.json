@@ -3,18 +3,9 @@
   "name": "tinyverse-sample-preview",
   "version": "0.1.0",
   "generated_by": "tinyverse-builder",
-  "generated_at": "2026-01-30T23:55:15.701Z",
+  "generated_at": "2026-01-31T00:44:27.607Z",
   "outDir": "/Users/michelle/Documents/Codesmith/tinyverse/examples/weather-app/dist/preview",
   "resources": [
-    {
-      "resourceUri": "ui://weather/forecast",
-      "toolId": "weather.getForecast",
-      "entryFile": "weather/forecast/index.html",
-      "assets": [
-        "weather/forecast/assets/index-DEbacSd-.js",
-        "weather/forecast/assets/index-bSHu2UwD.css"
-      ]
-    },
     {
       "resourceUri": "ui://tinyverse/preview",
       "toolId": "_tinyverse.preview",
@@ -22,6 +13,15 @@
       "assets": [
         "tinyverse/preview/assets/index-DR9c51hx.js",
         "tinyverse/preview/assets/index-Mranj_Sx.css"
+      ]
+    },
+    {
+      "resourceUri": "ui://weather/forecast",
+      "toolId": "weather.getForecast",
+      "entryFile": "weather/forecast/index.html",
+      "assets": [
+        "weather/forecast/assets/index-BxHYs3aB.js",
+        "weather/forecast/assets/index-bSHu2UwD.css"
       ]
     }
   ]

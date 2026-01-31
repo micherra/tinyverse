@@ -3,12 +3,12 @@
   "name": "tinyverse-sample-preview",
   "version": "0.1.0",
   "generated_by": "tinyverse-extractor",
-  "generated_at": "2026-01-30T23:55:14.829Z",
+  "generated_at": "2026-01-31T00:44:26.732Z",
   "tools": [
     {
       "id": "weather.getForecast",
       "name": "weather.getForecast",
-      "description": "Get a mock forecast",
+      "description": "Get a real forecast using Open-Meteo",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -38,5 +38,11 @@
       "resourceUri": "ui://weather/forecast"
     }
   ],
-  "uiComponents": []
+  "uiComponents": [
+    {
+      "toolId": "weather.getForecast",
+      "resourceUri": "ui://weather/forecast",
+      "entry": "/Users/michelle/Documents/Codesmith/tinyverse/examples/weather-app/apps/weather/forecast/ForecastCards.tsx"
+    }
+  ]
 }

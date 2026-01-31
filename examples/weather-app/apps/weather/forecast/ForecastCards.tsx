@@ -10,7 +10,7 @@ type ForecastCardsProps = {
   resourceUri?: string | null;
 };
 
-@tinyverseUi({ toolId: "weather.getForecast", resourceUri: "ui://weather/forecast" })
+@tinyverseUi("weather.getForecast")
 class ForecastCards extends React.PureComponent<ForecastCardsProps> {
   render() {
     const { data, toolId, resourceUri } = this.props;

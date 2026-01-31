@@ -19,13 +19,16 @@ Binary: `tinyverse` (alias optional)
 1. `tinyverse init`
 2. `tinyverse extract`
 3. `tinyverse build`
-4. `tinyverse dev`
-5. `tinyverse verify`
+4. `tinyverse dev` (flags: `--open`)
+5. `tinyverse verify` (flags: `--base-url`, `--headless`)
+6. `tinyverse preview [path]` (flags: `--tool`, `--resource`, `--entry`, `--openai-key`, `--open`)
 
 Common flags:
 
 * `--config <path>` default `tinyverse.config.json`
 * `--out <dir>` default `.tinyverse/`
+* `--tools <glob...>` override tool sources
+* `--ui <glob...>` override UI sources
 * `--strict` fail on warnings
 * `--json` machine-readable output
 * `--verbose` include logs
@@ -167,11 +170,12 @@ Unsupported unless explicit schema override:
 
 ### Inputs
 
-`apps.resources[]` from config:
-
-* `toolId`
-* `resourceUri`
-* `entry` (source path, e.g. `apps/weather/forecast.tsx`)
+1. `appResources[]` from config (explicit mapping):
+    * `toolId`
+    * `resourceUri`
+    * `entry` (source path, e.g. `apps/weather/forecast.tsx`)
+2. `uiComponents[]` discovered from decorators (implicit mapping):
+    * Extracted from files in `uiGlobs` or `toolGlobs` via `@tinyverseUi` decorator.
 
 ### Outputs
 

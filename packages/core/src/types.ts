@@ -63,6 +63,7 @@ export interface TinyverseConfig {
   name: string;
   version: string;
   toolGlobs: string[];
+  uiGlobs?: string[];
   appResources: AppResource[];
   tsconfig: string;
   outDir: string;

@@ -1,88 +1,172 @@
-# Tinyverse — TypeScript-first MCP app scaffold
+# Tinyverse
 
-Tinyverse is a TypeScript-only CLI for building MCP apps end-to-end: it extracts decorator-annotated tools, bundles `ui://` resources with Vite (React), scaffolds a dev MCP server, and verifies wiring/boot with stable diagnostics. v0.1 enforces a 1:1 mapping between tools and resources and ships with the weather demo (now living under `examples/weather-app` to showcase the CLI).
+**From decorators → working MCP Apps server in minutes.**
 
-## Requirements
-- Node.js >=18
-- npm (workspaces enabled)
+Tinyverse is a TypeScript-first toolchain for building [Model Context Protocol (MCP)](https://modelcontextprotocol.io) applications end-to-end. It bridges the gap between defining raw tools and serving interactive, tool-linked UI resources (`ui://`).
 
-## Quickstart (weather demo)
-1. Install deps: `npm install`
-2. Build CLI packages: `npm run build`
-3. Enter the demo project and (idempotently) seed files: `cd examples/weather-app && npm run init`
-4. Start the dev loop with the CLI: `npm run dev`
-   - Server: http://127.0.0.1:8787 (falls back to a random port if 8787 is blocked; check the log)
-   - UI: http://127.0.0.1:8787/ui/weather/forecast
-5. From another terminal in the same folder, verify against the running server: `npm run verify`
-   - Add `--strict` to fail on warnings; set `TINYVERSE_VERIFY_HEADLESS=true` to include boot checks.
-6. Shortcut from repo root: `npm run demo` (build → init → dev inside `examples/weather-app`).
+## Why Tinyverse?
 
-## CLI commands
-Run commands from your project root (for the demo, that is `examples/weather-app`).
-- `init`: Scaffold weather sample (decorated tool, React UI entry, config, server folders) without overwriting existing files.
-- `extract`: Parse `toolGlobs` from `tinyverse.config.json`, infer schemas from decorators, and emit `.tinyverse/tool.manifest.json`; enforces unique IDs and required `inputSchema`.
-- `build`: Run Vite for each `appResources` entry, outputting `dist/<namespace>/<resource>/index.html` + assets and `.tinyverse/apps.manifest.json`; enforces 1:1 tool↔resource mapping.
-- `dev`: Watch tools, UI entries, and config; rerun extract/build; generate server artifacts under `server/src/generated` + handler stubs; restart Fastify server on `server.host:server.port` (defaults 127.0.0.1:8787).
-- `verify`: Perform static wiring checks and live HTTP/resource checks against the running server; writes `.tinyverse/verify-report.json`.
-- `preview`: Generate a lightweight preview UI for a specific tool (`--tool <id>`) and run it via the dev server (uses the `templates/ui-preview` scaffold by default).
+Building MCP Apps introduces a complex integration surface: extracting tool metadata, bundling UI assets for iframes, serving resources correctly, and ensuring everything is wired up. Tinyverse automates this entire pipeline, allowing you to focus on your tools and UI logic rather than the plumbing.
 
-**Global flags:** `--config <path>`, `--out <dir>`, `--strict`, `--json`, `--verbose`. Env fallbacks: `TINYVERSE_CONFIG`, `TINYVERSE_OUT_DIR`, `TINYVERSE_STRICT`, `TINYVERSE_JSON`, `TINYVERSE_VERBOSE`, `TINYVERSE_VERIFY_HEADLESS`.
+- 🚀 **Zero-Config Start**: Go from `init` to a running server with a working weather demo in seconds.
+- 🛠️ **Decorator-Driven**: Define tools and UI mappings directly in your TypeScript code. No manual JSON schema maintenance.
+- 📦 **Vite-Powered UI**: Seamlessly bundle React-based UI resources into optimized static assets.
+- 🔄 **Orchestrated Dev Loop**: Automatic extraction, building, and server-restarting as you code.
+- 🛡️ **Built-in Verifier**: Static and live diagnostics that catch wiring and boot issues before you ship.
 
-## Configuration
-`tinyverse.config.json` defines the project surface:
-- `name`, `version`: project metadata.
-- `toolGlobs`: TS sources containing decorator-annotated tools (TS-only).
-- `appResources[]`: `{ toolId, resourceUri (ui://ns/res), entry }` with enforced 1:1 mapping.
-- `tsconfig`: used for extraction.
-- `outDir`: manifest + verify output directory (default `.tinyverse`).
-- `distDir`: Vite build output root (default `dist`).
-- `server`: `{ host, port, openBrowser }` used by `dev` and `verify`.
-- `bundler`: Vite-specific settings (`framework: react`, `base`, `assetsInlineLimit`).
+---
 
-Example (`tinyverse.config.json`):
+## Quickstart: Weather Demo
+
+The fastest way to see Tinyverse in action is by running the built-in weather demo.
+
+```bash
+# 1. Install dependencies and build the toolchain
+npm install && npm run build
+
+# 2. Run the demo shortcut
+# This initializes the demo in examples/weather-app and launches a preview
+npm run demo
+```
+
+---
+
+## Bringing Your Own Project to Life
+
+Tinyverse is designed to be added to existing TypeScript projects as easily as it scaffolds new ones.
+
+### 1. Installation
+
+Add the Tinyverse core and CLI to your project:
+
+```bash
+npm install @tinyverse/core
+npm install --save-dev @tinyverse/cli
+```
+
+### 2. Configuration
+
+Create a `tinyverse.config.json` in your root directory. This tells Tinyverse where to find your tools and how to build your UI.
+
 ```json
 {
-  "name": "tinyverse-sample",
-  "version": "0.1.0",
-  "toolGlobs": ["tools/**/*.ts"],
-  "appResources": [
-    {
-      "toolId": "weather.getForecast",
-      "resourceUri": "ui://weather/forecast",
-      "entry": "apps/weather/forecast/main.tsx"
-    }
-  ],
+  "name": "my-mcp-app",
+  "version": "1.0.0",
+  "toolGlobs": ["src/tools/**/*.ts"],
+  "uiGlobs": ["src/ui/**/*.tsx"],
   "tsconfig": "tsconfig.json",
   "outDir": ".tinyverse",
-  "distDir": "dist",
-  "server": { "host": "127.0.0.1", "port": 8787, "openBrowser": false },
-  "bundler": { "type": "vite", "framework": "react", "base": "/", "assetsInlineLimit": 4096 }
+  "distDir": "dist"
 }
 ```
-The weather demo keeps this at `examples/weather-app/tinyverse.config.json`.
 
-## Outputs and layout
-Paths are relative to the project root (e.g., `examples/weather-app/**` for the bundled demo).
-- `.tinyverse/tool.manifest.json` — extracted tool definitions.
-- `.tinyverse/apps.manifest.json` — built UI resources.
-- `.tinyverse/verify-report.json` — diagnostics from `verify`.
-- `dist/<namespace>/<resource>/index.html` + `assets/**` — Vite bundles keyed by `ui://` URI.
-- `server/src/generated/` — manifests + route tables produced by `dev`.
-- `server/src/handlers/` — handler stubs generated when missing.
+### 3. Annotate Your Tools
 
-## Repository structure
-- `packages/` — core libraries (`@tinyverse/core`, extractor, builder, dev-server, verifier, CLI).
-- `examples/weather-app/` — weather demo project (config, tools, UI, server) that demonstrates the CLI.
-- `templates/ui-preview/` — reusable UI template you can copy to preview any tool/resource.
-- `project-context/` — MRD/PRD/SAD and contracts describing v0.1.
-- `.cursor/` — agent prompts/rules (framework metadata).
-- `scripts/` — helper utilities (`scripts/smoke.mjs` runs extract→build→serve→verify against the demo).
-- `templates/` — placeholders for future scaffolds.
+Use the `@tool` decorator to mark methods as MCP tools. Tinyverse automatically infers the input and output schemas from your TypeScript types.
 
-## Development scripts
-- `npm run build` — build all packages.
-- `npm run demo` — build packages, then run the dev loop inside `examples/weather-app`.
-- `npm test` — unit tests + smoke test.
-- `npm run smoke` — run extract→build→serve→verify against the demo config.
-- `npm run clean` — remove build artifacts (`dist`, `.tinyverse`, package dists, demo outputs).
-- `npm run format` — check formatting (non-blocking).
+```typescript
+import { tool } from "@tinyverse/core";
+
+export class DataTools {
+  @tool({
+    id: "data.fetch",
+    description: "Fetches items from the database",
+    resourceUri: "ui://data/list" // Optional: Link to a UI resource
+  })
+  async fetchItems(args: { category: string; limit?: number }) {
+    // Implementation here...
+    return { items: [] };
+  }
+}
+```
+
+### 4. Annotate Your UI (Optional)
+
+If your tool has a visual component, create a React component and link it using `@tinyverseUi`.
+
+```tsx
+import { tinyverseUi } from "@tinyverse/core";
+
+const ItemList = ({ data }) => (
+  <ul>{data.items.map(item => <li key={item.id}>{item.name}</li>)}</ul>
+);
+
+export default tinyverseUi({ 
+  toolId: "data.fetch", 
+  resourceUri: "ui://data/list" 
+})(ItemList);
+```
+
+### 5. Start Development
+
+Run the dev command to start the orchestrated watch-build-serve loop.
+
+```bash
+npx tinyverse dev --open
+```
+
+Tinyverse will:
+1. **Extract** your tool metadata into `.tinyverse/tool.manifest.json`.
+2. **Build** your UI components into static assets in `dist/`.
+3. **Scaffold** a reference MCP server in `server/` (if it doesn't exist).
+4. **Generate** handler stubs in `server/src/handlers/` for your tools.
+5. **Start** the MCP server and open your browser to the UI resource.
+
+---
+
+## The Tinyverse Toolchain
+
+The `tinyverse` CLI provides all the commands needed for the MCP App lifecycle:
+
+| Command | Purpose |
+| :--- | :--- |
+| `init` | Scaffolds a complete weather demo project. |
+| `dev` | **The "Green Path"**: Orchestrates watch, extract, build, and server restart. |
+| `preview` | Generates a temporary UI shell to test a specific tool in isolation. |
+| `extract` | Parses TS decorators and generates `tool.manifest.json`. |
+| `build` | Bundles React components into `ui://` static assets via Vite. |
+| `verify` | Runs static and live checks to ensure E2E integrity. |
+
+### Common Flags
+- `--config <path>`: Custom config (default: `tinyverse.config.json`).
+- `--out <path>`: Where to store manifests and build artifacts.
+- `--strict`: Fail the build on any warning.
+- `--json`: Output diagnostics in machine-readable format.
+
+---
+
+## Configuration Reference (`tinyverse.config.json`)
+
+| Field | Description | Default |
+| :--- | :--- | :--- |
+| `name` | Project name. | Required |
+| `version` | Project version. | Required |
+| `toolGlobs` | Array of globs to find annotated tools. | Required |
+| `uiGlobs` | Array of globs to find annotated UI components. | Optional |
+| `appResources` | List of `{ toolId, resourceUri, entry }` mappings. | `[]` |
+| `tsconfig` | Path to `tsconfig.json`. | `tsconfig.json` |
+| `outDir` | Directory for manifests and build metadata. | `.tinyverse` |
+| `distDir` | Directory for built UI assets. | `dist` |
+| `server.port` | Port for the reference MCP server. | `8787` |
+| `bundler.type` | Bundler to use (only `vite` supported). | `vite` |
+
+---
+
+## Architecture & Layout
+
+Tinyverse organizes your project for both development speed and production readiness:
+
+- **`.tinyverse/`**: Internal manifests and temporary artifacts.
+- **`dist/`**: Production-ready static UI assets organized by `ui://` namespace.
+- **`server/`**: A reference MCP server implementation.
+  - `src/handlers/`: Where you implement your tool logic (handlers are generated here).
+  - `src/generated/`: Auto-generated routes and manifests used by the server.
+
+## Philosophy
+
+Tinyverse is built for developers who value **correctness** and **velocity**. By leveraging TypeScript as the single source of truth, it eliminates the "schema gap" common in tool development. It doesn't just build your app; it verifies that it *actually works* through its unique live-probing verifier.
+
+---
+
+## License
+Apache-2.0

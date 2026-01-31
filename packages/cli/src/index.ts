@@ -26,6 +26,7 @@ interface GlobalOptions {
   config: string;
   out?: string;
   tools?: string[];
+  ui?: string[];
   strict: boolean;
   json: boolean;
   verbose: boolean;
@@ -54,6 +55,7 @@ const getGlobalOptions = (command: Command): GlobalOptions => {
     config: opts.config ?? defaultConfigPath,
     out: opts.out ?? defaultOutDir,
     tools: opts.tools,
+    ui: opts.ui,
     strict: Boolean(opts.strict ?? defaultStrict),
     json: Boolean(opts.json ?? defaultJson),
     verbose: Boolean(opts.verbose ?? defaultVerbose),
@@ -418,7 +420,11 @@ const generateHandlerStubs = async (tools: { id: string }[]) => {
 };
 
 const loadCliConfig = async (options: GlobalOptions): Promise<TinyverseConfig> => {
-  return loadConfig(options.config, { outDir: options.out, toolGlobs: options.tools });
+  return loadConfig(options.config, {
+    outDir: options.out,
+    toolGlobs: options.tools,
+    uiGlobs: options.ui,
+  });
 };
 
 class DevRunner {
@@ -561,6 +567,7 @@ program
   .option("--config <path>", "Path to config file", defaultConfigPath)
   .option("--out <path>", "Override outDir (or set TINYVERSE_OUT_DIR)", defaultOutDir)
   .option("--tools <glob...>", "Globs for tool sources")
+  .option("--ui <glob...>", "Globs for UI component sources")
   .option("--strict", "Treat warnings as errors", defaultStrict)
   .option("--json", "Emit diagnostics as JSON", defaultJson)
   .option("--verbose", "Enable verbose logging", defaultVerbose);
@@ -638,6 +645,7 @@ program
     const initialConfig = await loadCliConfig(globals);
     const watchPaths = [
       ...initialConfig.toolGlobs,
+      ...(initialConfig.uiGlobs ?? []),
       ...initialConfig.appResources.map((r) => r.entry),
       globals.config ?? defaultConfigPath,
     ];
@@ -743,6 +751,7 @@ program
     const configForWatch = await buildPreviewConfig();
     const watchPaths = [
       ...configForWatch.toolGlobs,
+      ...(configForWatch.uiGlobs ?? []),
       ...configForWatch.appResources.map((r) => r.entry),
       globals.config ?? defaultConfigPath,
     ];
@@ -767,10 +776,16 @@ program
 program
   .command("verify")
   .description("Run static + live checks against running server")
-  .action(async (_opts, command) => {
+  .option("--base-url <url>", "Base URL of the running server")
+  .option("--headless", "Run live checks in headless browser")
+  .action(async (opts, command) => {
     const globals = getGlobalOptions(command);
     const config = await loadCliConfig(globals);
-    const result = await verify(config, { strict: globals.strict });
+    const result = await verify(config, {
+      strict: globals.strict,
+      baseUrl: opts.baseUrl as string,
+      headless: opts.headless as boolean,
+    });
     if (globals.json || result.diagnostics.length > 0) {
       emitDiagnostics({
         command: "verify",

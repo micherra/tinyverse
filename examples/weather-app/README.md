@@ -26,7 +26,7 @@ Or jump straight to the CLI-driven preview UI:
 - `npm run verify` — static + live checks against the running server.
 
 ## Layout
-- `tinyverse.config.json` — demo config (toolGlobs, appResources, bundler, server).
+- `tinyverse.config.json` — demo config (toolGlobs, uiGlobs, bundler, server).
 - `tools/weather/forecast.ts` — decorator-defined tool returning real forecasts using Open-Meteo API.
 - `apps/weather/forecast/ForecastCards.tsx` — Decorated React UI for `ui://weather/forecast`.
 - `server/src/handlers/weather.getForecast.ts` — Logic for the `weather.getForecast` tool.

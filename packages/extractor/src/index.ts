@@ -115,9 +115,17 @@ const parseUiDecorator = (decorator: ts.Decorator): Record<string, unknown> | nu
   const decoratorName = ts.isIdentifier(expr.expression) ? expr.expression.text : undefined;
   if (decoratorName !== "tinyverseUi") return null;
   const [arg] = expr.arguments;
-  if (!arg || !ts.isObjectLiteralExpression(arg)) return null;
-  const parsed = evaluateLiteral(arg);
-  return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  if (!arg) return null;
+
+  if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
+    return { toolId: arg.text };
+  }
+
+  if (ts.isObjectLiteralExpression(arg)) {
+    const parsed = evaluateLiteral(arg);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  }
+  return null;
 };
 
 const isStringLiteralUnion = (type: ts.Type): string[] | null => {
@@ -277,7 +285,8 @@ const inferOutputSchema = (
 };
 
 export const extractTools = async (config: TinyverseConfig, options: ExtractOptions = {}): Promise<ExtractResult> => {
-  const toolFiles = await fg(config.toolGlobs, { absolute: true });
+  const allGlobs = Array.from(new Set([...config.toolGlobs, ...(config.uiGlobs ?? [])]));
+  const files = await fg(allGlobs, { absolute: true });
   const diagnostics: Diagnostic[] = [];
   const tools: ToolManifestEntry[] = [];
   const uiComponents: UiComponentManifestEntry[] = [];
@@ -311,12 +320,12 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
   }
 
   const program = ts.createProgram({
-    rootNames: Array.from(new Set([...tsconfigFiles, ...toolFiles])),
+    rootNames: Array.from(new Set([...tsconfigFiles, ...files])),
     options: compilerOptions,
   });
   const checker = program.getTypeChecker();
 
-  for (const file of toolFiles) {
+  for (const file of files) {
     const sourceFile = program.getSourceFile(file);
     if (!sourceFile) {
       addDiagnostic(diagnostics, "warning", "TV_DIAG_FILE_SKIP", `Unable to load ${file} from tsconfig context`, file);
@@ -391,20 +400,19 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
           const uiMeta = parseUiDecorator(decorator);
           if (uiMeta) {
             const toolId = uiMeta.toolId as string | undefined;
-            const resourceUri = uiMeta.resourceUri as string | undefined;
-            if (!toolId || !resourceUri) {
+            if (!toolId) {
               addDiagnostic(
                 diagnostics,
                 "error",
-                "TV_DIAG_UI_META_MISSING",
-                `UI component missing toolId or resourceUri in ${file}`,
+                "TV_DIAG_UI_TOOL_ID_MISSING",
+                `UI component missing toolId in ${file}`,
                 file,
               );
               return;
             }
             uiComponents.push({
               toolId,
-              resourceUri,
+              resourceUri: (uiMeta.resourceUri as string) ?? "",
               entry: file,
               previewTemplate: uiMeta.previewTemplate as string | undefined,
             });
@@ -415,6 +423,25 @@ export const extractTools = async (config: TinyverseConfig, options: ExtractOpti
     };
 
     visit(sourceFile);
+  }
+
+  // Resolve missing resourceUri for UI components from tool definitions
+  for (const ui of uiComponents) {
+    if (!ui.resourceUri) {
+      const tool = tools.find((t) => t.id === ui.toolId);
+      if (tool?.resourceUri) {
+        ui.resourceUri = tool.resourceUri;
+      } else {
+        addDiagnostic(
+          diagnostics,
+          "error",
+          "TV_DIAG_UI_URI_UNRESOLVED",
+          `UI component for tool ${ui.toolId} is missing resourceUri and it could not be inferred from the tool definition.`,
+          ui.entry,
+          "Ensure the tool has a resourceUri in its @tool decorator, or provide one in the @tinyverseUi decorator.",
+        );
+      }
+    }
   }
 
   const manifest: ToolManifest = {
